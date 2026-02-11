@@ -18,4 +18,4 @@ Iceberg staging → Iceberg core (трансформации в SQL)
     │   Superset / Grafana (визуализация)
     │
     └─→ (опционально) MS SQL Server (если нужен для Power BI)
-``
+```
