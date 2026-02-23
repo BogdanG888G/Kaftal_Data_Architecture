@@ -1,48 +1,60 @@
 ```
-Airflow (загрузка файлов)
-    ↓
-S3 landing (сырые csv/xlsx)
-    ↓
-Airflow → Spark (парсинг в Iceberg)
-    ↓
-Iceberg raw (партиционированные таблицы на S3)
-    ↓
-Airflow → dbt run (через Trino или Spark)
-    ↓
-Iceberg staging → Iceberg core (трансформации в SQL)
-    ↓
-    ├─→ Trino (ad-hoc запросы аналитиков)
-    │
-    ├─→ Airflow → ClickHouse (обновление mart-ов для дашбордов)
-    │       ↓
-    │   Superset / Grafana (визуализация)
-    │
-    └─→ (опционально) MS SQL Server (если нужен для Power BI)
-```
+┌──────────────────────────────────────────────────────────────┐
+│                   АРХИТЕКТУРА                                │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Airflow          ← Оркестрация                              │
+│    │                                                         │
+│    ├─► CSV → Parquet (S3)        ← Bronze (raw data lake)    │
+│    │                                                         │
+│    ├─► Spark → Iceberg           ← Silver (нормализация)     │
+│    │                                                         │
+│    ├─► dbt → ClickHouse          ← Gold (агрегаты для BI)    │
+│    │                                                         │
+│    └─► Superset                  ← Визуализация              │
+│                                                              │
+│  Trino (ad-hoc)  ← Для аналитиков (гибкие запросы по Raw)    │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
 
-```
-graph TD
-    A[Источники: Файлы (CSV/XLSX)] -->|Airflow (сенсоры)| B(S3 Landing)
-    G[Kafka (События)] -->|Spark Struct. Streaming| C
-    
-    B -->|Airflow -> Spark| C(Iceberg Raw - S3)
-    C -->|dbt test / Great Expectations| D{Quality Check}
-    D -- OK --> E[dbt run via Trino]
-    D -- Fail --> F[Alert in Slack/Telegram]
-    
-    E --> G[(Iceberg Core / Features)]
-    
-    G --> H[Trino (Ad-hoc)]
-    G --> I[Airflow -> ClickHouse (Mart Update)]
-    G --> J[MLflow (Log features)]
-    
-    I --> K[(ClickHouse Marts)]
-    K --> L[Superset / Grafana]
-    
-    H --> M[FastAPI (Data API)]
-    M --> N[JSON for external apps]
-    
-    J --> O[MLflow Tracking Server]
-    
-    G -.-> P[(Greenplum - Archive/Heavy loads)]
+
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│  BRONZE (Data Lake)                                         │
+│  ├─ S3: s3://data/2024/september/okey.csv                   │
+│  ├─ S3: s3://data/2024/september/perekrestok.csv            │
+│  └─ Формат: CSV/JSON (как есть)                             │
+│      └─► Airflow Task 1: конвертация в Parquet              │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  SILVER (Normalized)                                        │
+│  ├─ Iceberg: iceberg.silver.sales                           │
+│  ├─ Формат: Parquet                                         │
+│  ├─ Партиции: retail_chain, year, month                     │
+│  └─ Схема: единая, типизированная                           │
+│      └─► Spark Task 2: нормализация                         │
+│           ├─ Маппинг колонок (Вкус → flavor)                │
+│           ├─ Каст типов (string → double)                   │
+│           └─ Добавление метаданных (source_file)            │
+│                                                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  GOLD (Business Metrics)                                    │
+│  ├─ ClickHouse: gold.monthly_sales                          │
+│  ├─ ClickHouse: gold.top_brands                             │
+│  ├─ ClickHouse: gold.chain_comparison                       │
+│  └─ Формат: MergeTree (оптимизировано для агрегатов)        │
+│      └─► dbt Task 3: SQL-трансформации                      │
+│           ├─ Агрегации (SUM, AVG по месяцам)                │
+│           ├─ Джойны (если нужно)                            │
+│           └─ Бизнес-метрики (margin %, top products)        │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+         │                      │                     │
+         ▼                      ▼                     ▼
+      Trino                  Trino               ClickHouse
+  (для ad-hoc           (для разработки)      (для Superset)
+   по сырым данным)
+
 ```
