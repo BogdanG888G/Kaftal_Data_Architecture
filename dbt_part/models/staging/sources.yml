@@ -1,0 +1,11 @@
+sources:
+  - name: silver
+    description: "Сырые данные из Apache Iceberg"
+    schema: silver
+    database: iceberg
+    tables:
+      - name: 'sales'
+        description: 'Таблица с продажами'
+        columns:
+          - name: 'Номер строки'
+            description: 'Номер ID'

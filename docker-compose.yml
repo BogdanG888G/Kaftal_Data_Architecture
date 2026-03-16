@@ -397,9 +397,40 @@ services:
     networks:
       - default
     user: root
+  
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse
+    ports:
+      - "8123:8123"
+      - "9009:9000"
+    volumes:
+    - clickhouse-data:/var/lib/clickhouse
+    environment:
+      - CLICKHOUSE_USER=admin
+      - CLICKHOUSE_PASSWORD=123
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    networks:
+      - default
+
+
+  trino:
+    image: trinodb/trino:435 
+    container_name: trino
+    ports:
+      - "8085:8080"
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog
+    depends_on:
+      - minio
+      - clickhouse
+      - iceberg-rest
+    networks:
+      - default
 
 volumes:
   postgres-db-volume:
   minio-data:
   ivy-cache:        
   spark-jars:       
+  clickhouse-data:

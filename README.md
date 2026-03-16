@@ -97,3 +97,5 @@ TODO:
 * Версионирование данных 
 * Мониторинг и алерты
 * Incremental Load (дельта-загрузка)
+* Great Expectations / Soda — тесты качества данных
+*  Grafana + Prometheus      — мониторинг пайплайна
