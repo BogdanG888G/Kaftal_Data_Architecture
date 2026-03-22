@@ -91,11 +91,22 @@
 
 ```
 
-TODO: 
-* реализовать Data Vault
-* Data Quality (тесты данных) дагов
-* Версионирование данных 
-* Мониторинг и алерты
-* Incremental Load (дельта-загрузка)
-* Great Expectations / Soda — тесты качества данных
-*  Grafana + Prometheus      — мониторинг пайплайна
+# TODO: 
+
+1. ⬜ Superset (дашборды)
+
+2. ⬜ Мониторинг и алерты (Telegram)
+
+3. ⬜ Data Quality (dbt tests)
+
+4. ⬜ Incremental Load
+
+5. ⬜ Soda / Great Expectations
+
+6. ⬜ GitHub Actions (CI/CD для dbt)
+
+7. ⬜ Grafana + Prometheus
+
+8. ⬜ DataHub
+
+9. ⬜ Data Vault / Anchor Modeling

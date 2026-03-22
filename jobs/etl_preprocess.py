@@ -8,7 +8,7 @@ import logging
 
 logging.getLogger().setLevel(logging.ERROR)
 
-os.environ['PYSPARK_SUBMIT_ARGS'] = '--packages org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.0 pyspark-shell'
+os.environ['PYSPARK_SUBMIT_ARGS'] = '--packages org.apache.hadoop:hadoop-aws:3.3.4,com.amazonaws:aws-java-sdk-bundle:1.12.262,org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.0,org.apache.iceberg:iceberg-aws-bundle:1.5.0 pyspark-shell'
 
 spark = SparkSession.builder \
     .appName('Iceberg Test') \
@@ -16,15 +16,22 @@ spark = SparkSession.builder \
     .config("spark.jars.packages", 
             "org.apache.hadoop:hadoop-aws:3.3.4,"
             "com.amazonaws:aws-java-sdk-bundle:1.12.262,"
-            "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.0") \
+            "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.0,"
+            "org.apache.iceberg:iceberg-aws-bundle:1.5.0") \
     .config("spark.sql.extensions", 
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions") \
     .config("spark.sql.catalog.iceberg", 
             "org.apache.iceberg.spark.SparkCatalog") \
-    .config("spark.sql.catalog.iceberg.type", "hadoop") \
-    .config("spark.sql.catalog.iceberg.warehouse", "s3a://warehouse/") \
+    .config("spark.sql.catalog.iceberg.type", "rest") \
+    .config("spark.sql.catalog.iceberg.uri", "http://iceberg-rest:8181") \
+    .config("spark.sql.catalog.iceberg.io-impl", "org.apache.iceberg.aws.s3.S3FileIO") \
+    .config("spark.sql.catalog.iceberg.s3.endpoint", "http://minio:9000") \
+    .config("spark.sql.catalog.iceberg.s3.access-key-id", "minioadmin") \
+    .config("spark.sql.catalog.iceberg.s3.secret-access-key", "minioadmin") \
+    .config("spark.sql.catalog.iceberg.s3.path-style-access", "true") \
     .config("spark.hadoop.fs.s3a.endpoint", "http://minio:9000") \
     .config("spark.hadoop.fs.s3a.access.key", "minioadmin") \
+    .config("spark.sql.catalog.iceberg.client.region", "us-east-1") \
     .config("spark.hadoop.fs.s3a.secret.key", "minioadmin") \
     .config("spark.hadoop.fs.s3a.path.style.access", "true") \
     .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
@@ -33,7 +40,6 @@ spark = SparkSession.builder \
 spark.sparkContext.setLogLevel("WARN")
 
 spark.sql('CREATE DATABASE IF NOT EXISTS iceberg.silver')
-
 
 spark.sql("""
     CREATE TABLE IF NOT EXISTS iceberg.silver.sales (
@@ -70,6 +76,8 @@ spark.sql("""
     USING iceberg
     PARTITIONED BY (retail_chain, year, month)
 """)
+
+spark.sql('truncate table iceberg.silver.sales')
 
 
 s3 = boto3.client('s3', 

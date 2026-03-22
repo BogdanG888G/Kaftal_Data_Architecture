@@ -31,7 +31,7 @@ SPARK_JARS = ','.join([
     catchup = False,
     start_date = datetime(2026, 2, 1),
     schedule = '@weekly',
-    tags = ['s3']
+    tags = ['s3', 'spark']
 )
 
 
@@ -103,37 +103,50 @@ def pipeline():
 
 
     spark_preprocess = SparkSubmitOperator(
-        task_id = 'spark_preprocess',
-        application = '/opt/airflow/jobs/etl_preprocess.py',
-        conn_id = 'spark_connection',
-        name='etl_transformation_spark',
+    task_id='spark_preprocess',
+    application='/opt/airflow/jobs/etl_preprocess.py',
+    conn_id='spark_connection',
+    name='etl_transformation_spark',
     
-        jars=SPARK_JARS,
+    jars=SPARK_JARS,
+    
+    # Добавляем packages для boto3 и других зависимостей
+    packages='org.apache.iceberg:iceberg-aws-bundle:1.5.0',
+    
+    conf={
+        # Iceberg с REST catalog (как в jupyter)
+        'spark.sql.extensions': 'org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions',
+        'spark.sql.catalog.iceberg': 'org.apache.iceberg.spark.SparkCatalog',
+        'spark.sql.catalog.iceberg.type': 'rest',
+        'spark.sql.catalog.iceberg.uri': 'http://iceberg-rest:8181',
+        'spark.sql.catalog.iceberg.io-impl': 'org.apache.iceberg.aws.s3.S3FileIO',
+        'spark.sql.catalog.iceberg.s3.endpoint': 'http://minio:9000',
+        'spark.sql.catalog.iceberg.s3.access-key-id': 'minioadmin',
+        'spark.sql.catalog.iceberg.s3.secret-access-key': 'minioadmin',
+        'spark.sql.catalog.iceberg.s3.path-style-access': 'true',
+        'spark.sql.catalog.iceberg.client.region': 'us-east-1',
         
-        conf={
-            # Iceberg
-            'spark.sql.extensions': 'org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions',
-            'spark.sql.catalog.iceberg': 'org.apache.iceberg.spark.SparkCatalog',
-            'spark.sql.catalog.iceberg.type': 'hadoop',
-            'spark.sql.catalog.iceberg.warehouse': 's3a://warehouse/',
-            
-            # S3/MinIO
-            'spark.hadoop.fs.s3a.endpoint': 'http://minio:9000',
-            'spark.hadoop.fs.s3a.access.key': 'minioadmin',
-            'spark.hadoop.fs.s3a.secret.key': 'minioadmin',
-            'spark.hadoop.fs.s3a.path.style.access': 'true',
-            'spark.hadoop.fs.s3a.impl': 'org.apache.hadoop.fs.s3a.S3AFileSystem',
-            'spark.hadoop.fs.s3a.connection.ssl.enabled': 'false',
-            
-            # Оптимизация производительности
-            'spark.driver.memory': '1g',
-            'spark.executor.memory': '1g',
-            'spark.sql.adaptive.enabled': 'true',
-            'spark.serializer': 'org.apache.spark.serializer.KryoSerializer',
-        },
+        # S3/MinIO для чтения данных
+        'spark.hadoop.fs.s3a.endpoint': 'http://minio:9000',
+        'spark.hadoop.fs.s3a.access.key': 'minioadmin',
+        'spark.hadoop.fs.s3a.secret.key': 'minioadmin',
+        'spark.hadoop.fs.s3a.path.style.access': 'true',
+        'spark.hadoop.fs.s3a.impl': 'org.apache.hadoop.fs.s3a.S3AFileSystem',
+        'spark.hadoop.fs.s3a.connection.ssl.enabled': 'false',
         
-        verbose=True,
-    )
+        # Память
+        'spark.driver.memory': '1g',
+        'spark.executor.memory': '1g',
+        'spark.sql.adaptive.enabled': 'true',
+        'spark.serializer': 'org.apache.spark.serializer.KryoSerializer',
+
+        # Timeout для больших данных
+        'spark.network.timeout': '6000s',
+        'spark.executor.heartbeatInterval': '600s',
+    },
+    
+    verbose=True,
+)
 
     @task(trigger_rule = 'one_success')
     def finish(**context):
