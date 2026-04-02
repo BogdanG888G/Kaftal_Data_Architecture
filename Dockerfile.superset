@@ -1,0 +1,9 @@
+FROM apache/superset:latest
+
+USER root
+
+RUN uv pip install --no-cache-dir \
+    "clickhouse-connect>=0.5.0" \
+    "trino[sqlalchemy]"
+
+USER superset

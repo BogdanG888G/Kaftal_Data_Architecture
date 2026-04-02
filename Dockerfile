@@ -32,4 +32,6 @@ RUN pip install --upgrade pip && \
     apache-airflow-providers-amazon \
     pyspark==3.5.3 \
     boto3 \
-    pyarrow
+    pyarrow \
+    dbt-core \
+    dbt-trino

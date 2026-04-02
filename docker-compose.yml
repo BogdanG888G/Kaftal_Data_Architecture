@@ -3,6 +3,8 @@ services:
     build:
       context: .
     container_name: airflow
+    networks:
+      - default
     ports:
       - "8080:8080"
     environment:
@@ -13,6 +15,7 @@ services:
       # Фиксированные креды для standalone
       _AIRFLOW_WWW_USER_USERNAME: admin
       _AIRFLOW_WWW_USER_PASSWORD: admin123
+      DBT_PROFILES_DIR: /opt/airflow/dbt
     volumes:
       - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
       - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
@@ -20,6 +23,7 @@ services:
       - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
       - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
       - ${AIRFLOW_PROJ_DIR:-.}/jobs:/opt/airflow/jobs
+      - ./dbt_part:/opt/airflow/dbt
     user: "${AIRFLOW_UID:-50000}:0"
     command: >
       bash -c "
@@ -61,20 +65,6 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio-data:/data  # данные сохраняются в volume
-
-  redis:
-    # Redis is limited to 7.2-bookworm due to licencing change
-    # https://redis.io/blog/redis-adopts-dual-source-available-licensing/
-    image: redis:7.2-bookworm
-    expose:
-      - 6379
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 90s
-      timeout: 30s
-      retries: 50
-      start_period: 30s
-    restart: always
 
   spark-master:
     image: apache/spark:4.0.2-scala2.13-java17-python3-r-ubuntu
@@ -166,7 +156,7 @@ services:
       - "8123:8123"
       - "9009:9000"
     volumes:
-    - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-data:/var/lib/clickhouse
     environment:
       - CLICKHOUSE_USER=admin
       - CLICKHOUSE_PASSWORD=123
@@ -188,6 +178,31 @@ services:
       - iceberg-rest
     networks:
       - default
+
+  superset:
+    build:
+      context: .
+      dockerfile: Dockerfile.superset
+    container_name: superset
+    ports:
+      - "8088:8088"
+    environment:
+      - SUPERSET_SECRET_KEY=supersecret123
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=admin
+    command: >
+      bash -c "
+        superset db upgrade &&
+        superset fab create-admin --username admin --firstname Admin --lastname Admin --email admin@admin.com --password admin &&
+        superset init &&
+        superset run -h 0.0.0.0 -p 8088
+      "
+    depends_on:
+      - clickhouse
+      - trino
+    networks:
+      - default
+  
 
 volumes:
   postgres-db-volume:

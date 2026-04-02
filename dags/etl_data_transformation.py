@@ -7,15 +7,121 @@ from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOpe
 
 import logging
 import pandas as pd
-
+import requests
 from datetime import *
 import os
+import traceback
+
+
+# === TELEGRAM CONFIG ===
+TELEGRAM_TOKEN = "8421267289:AAGv29lCile1WtII7qV_zPCUyi-hz-8832I"
+TELEGRAM_CHAT_ID = "433923554"
+
+
+def send_telegram_alert(context):
+    """Отправляет алерт с полной информацией об ошибке"""
+    
+    try:
+        ti = context.get('task_instance')
+        dag_id = context.get('dag').dag_id
+        task_id = ti.task_id
+        execution_date = context.get('dag_run').start_date
+        exception = context.get('exception')
+        
+        # ===== ГЛАВНОЕ ИСПРАВЛЕНИЕ: получаем traceback правильно =====
+        
+        # Способ 1: Из самого exception объекта
+        if exception is not None:
+            error_message = str(exception)
+            # Извлекаем полный traceback из exception
+            tb_lines = traceback.format_exception(
+                type(exception), 
+                exception, 
+                exception.__traceback__
+            )
+            error_trace = ''.join(tb_lines)
+        else:
+            # Способ 2: Если exception is None (часто у сенсоров по timeout)
+            error_message = "Задача завершилась с ошибкой (exception=None, возможно timeout)"
+            error_trace = "Traceback недоступен — проверьте логи в Airflow UI"
+        
+        # Способ 3: Читаем логи таска напрямую (самый надёжный)
+        try:
+            task_log = ti.log.handlers  # доступ к логам
+            # Или получаем последние строки лога
+            from airflow.utils.log.log_reader import TaskLogReader
+            log_reader = TaskLogReader()
+            log_content = log_reader.read_log_stream(
+                ti=ti,
+                try_number=ti.try_number
+            )
+            # Берём последние 500 символов лога
+            full_log = ''.join([chunk for chunk in log_content])
+            last_log_lines = full_log[-500:] if full_log else "Логи пустые"
+        except Exception as log_err:
+            last_log_lines = f"Не удалось прочитать логи: {log_err}"
+        
+        # Ссылка на логи (исправленный формат URL)
+        log_url = (
+            f"http://localhost:8080/dags/{dag_id}/grid"
+            f"?task_id={task_id}"
+        )
+        
+        # Формируем сообщение
+        message = f"""
+⚠️ <b>ОШИБКА В DAG!</b>
+
+<b>DAG:</b> <code>{dag_id}</code>
+<b>Задача:</b> <code>{task_id}</code>
+<b>Попытка:</b> <code>{ti.try_number} из {ti.max_tries + 1}</code>
+<b>Время:</b> <code>{execution_date}</code>
+<b>Состояние:</b> <code>{ti.state}</code>
+
+<b>Ошибка:</b>
+<code>{error_message[:300]}</code>
+
+<b>Traceback:</b>
+<code>{error_trace[:800]}</code>
+
+<b>Последние логи:</b>
+<code>{last_log_lines[:500]}</code>
+
+<b>Логи:</b>
+<a href="{log_url}">🔗 Открыть в Airflow</a>
+        """.strip()
+        
+        # Telegram ограничение — 4096 символов
+        if len(message) > 4096:
+            message = message[:4090] + "...</code>"
+        
+        # Отправляем
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        response = requests.post(
+            url,
+            data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": message,
+                "parse_mode": "HTML"
+            },
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            logging.info("✅ Алерт отправлен в Telegram")
+        else:
+            logging.error(f"❌ Telegram ошибка: {response.status_code} - {response.text}")
+
+    except Exception as e:
+        # Логируем ошибку самого callback с полным traceback
+        logging.error(f"❌ Ошибка отправки алерта: {e}")
+        logging.error(traceback.format_exc())
 
 default_args = {
     'owner': 'airflow',
     'retries': 3,
     'retry_delay': timedelta(minutes=5),
-    'execution_timeout': timedelta(hours=1)
+    'execution_timeout': timedelta(hours=1),
+    'on_failure_callback': send_telegram_alert
 }
 
 SPARK_JARS = ','.join([
@@ -31,7 +137,8 @@ SPARK_JARS = ','.join([
     catchup = False,
     start_date = datetime(2026, 2, 1),
     schedule = '@weekly',
-    tags = ['s3', 'spark']
+    tags = ['s3', 'spark'],
+    on_failure_callback=send_telegram_alert
 )
 
 
@@ -89,7 +196,7 @@ def pipeline():
 
             logging.info(f'Считали {file_name}, размер {file_size}')
 
-            if file_size > 10_000:
+            if file_size > 1000_000:
                 return 'spark_preprocess'
             
             else:
@@ -148,12 +255,12 @@ def pipeline():
     verbose=True,
 )
 
-    @task(trigger_rule = 'one_success')
-    def finish(**context):
-        return 'Обработка в silver-layer закончена'
+    @task.bash(trigger_rule = 'one_success')
+    def dbt_run():
+        return 'cd /opt/airflow/dbt && dbt run --target docker'
 
 
-    wait_for_data >> start() >> transform_to_silver() >> [pandas_preprocess(), spark_preprocess] >> finish()
+    wait_for_data >> start() >> transform_to_silver() >> [pandas_preprocess(), spark_preprocess] >> dbt_run()
 
 pipeline()
 
