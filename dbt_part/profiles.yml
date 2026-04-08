@@ -1,0 +1,34 @@
+dbt_part:
+  outputs:
+
+    dev:
+      type: trino
+      method: none
+      user: admin
+      host: localhost
+      port: 8085
+      catalog: clickhouse
+      schema: default
+      threads: 1
+
+    docker:
+      type: trino
+      method: none
+      user: admin
+      host: trino
+      port: 8080
+      catalog: clickhouse
+      schema: default
+      threads: 4
+
+    prod:
+      type: trino
+      method: none
+      user: admin
+      host: localhost
+      port: 8085
+      catalog: clickhouse
+      schema: default
+      threads: 1
+
+  target: dev
