@@ -1,0 +1,7 @@
+data_source iceberg_via_trino:
+  type: trino
+  host: trino
+  port: 8080
+  http_scheme: http
+  catalog: iceberg
+  schema: silve

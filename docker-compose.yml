@@ -28,6 +28,7 @@ services:
       - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
       - ${AIRFLOW_PROJ_DIR:-.}/jobs:/opt/airflow/jobs
       - ./dbt_part:/opt/airflow/dbt
+      - ./soda:/opt/airflow/soda
     user: "${AIRFLOW_UID:-50000}:0"
     command: >
       bash -c "
@@ -162,12 +163,13 @@ services:
 
 
   trino:
-    image: trinodb/trino:435 
+    image: trinodb/trino:435
     container_name: trino
     ports:
       - "8085:8080"
     volumes:
       - ./trino/catalog:/etc/trino/catalog
+      - ./trino/etc/config.properties:/etc/trino/config.properties
     depends_on:
       - minio
       - clickhouse
@@ -198,6 +200,40 @@ services:
       - trino
     networks:
       - default
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - default
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - default
+    restart: unless-stopped
   
 
 volumes:
@@ -206,3 +242,5 @@ volumes:
   ivy-cache:        
   spark-jars:       
   clickhouse-data:
+  prometheus-data:
+  grafana-data:

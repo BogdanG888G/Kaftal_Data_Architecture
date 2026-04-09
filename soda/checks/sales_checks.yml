@@ -1,0 +1,14 @@
+# soda/checks/sales_checks.yml
+checks for sales:
+  # Базовые
+  - row_count > 0
+  - duplicate_count(id) = 0
+  
+  # Пропуски
+  - missing_count(id) = 0
+  - missing_count(period) = 0
+  
+  # Диапазоны (ПРАВИЛЬНЫЙ СИНТАКСИС)
+  - min(sales_rub) >= 0
+  - max(sales_rub) < 100000000
+  - avg(sales_rub) between 10 and 1000000

@@ -1,0 +1,30 @@
+{
+  "dashboard": {
+    "title": "Data Platform Monitoring",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Airflow DAG Runs",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(airflow_dag_processing_total_parse_time[5m])",
+            "legendFormat": "Parse Time"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Spark Jobs",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "spark_master_apps"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      }
+    ]
+  }
+}

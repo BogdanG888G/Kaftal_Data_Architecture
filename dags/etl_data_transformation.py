@@ -20,15 +20,28 @@ TELEGRAM_CHAT_ID = Variable.get('TELEGRAM_CHAT_ID')
 
 def send_telegram_alert_error(context):
 
-    message = context['dag']
+    task = context['task_instance'].task_id
+    dag = context['ti'].dag_id
+    ds = context['ds']
+    exception = context['exception']
+    '''
+    dict_keys(['dag', 'inlets', 'map_index_template', 'outlets', 'run_id', 'task', 'task_instance', 'ti', 
+    'outlet_events', 'inlet_events', 'macros', 'params', 'var', 'conn', 'dag_run', 'triggering_asset_events', 
+    'task_instance_key_str', 'task_reschedule_count', 'prev_start_date_success', 'prev_end_date_success', 'logical_date', 'ds', 'ds_nodash', 
+    'ts', 'ts_nodash', 'ts_nodash_with_tz', 'data_interval_end', 'data_interval_start', 'prev_data_interval_start_success', 'prev_data_interval_end_success', 
+    'templates_dict', 'exception'])
+    '''
+
+
+    message = f'Ошибка в задаче {task}, в даге {dag}. Дата запуска {ds}. Ошибка {exception}'
 
     requests.post(url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage', 
                   data={'chat_id': TELEGRAM_CHAT_ID, 'text': message})
 
 
-def send_telegram_success(context):
+def send_telegram_success():
 
-    message = context['dag']
+    message = 'Пайплайн отрработал успешно!'
 
     requests.post(url = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage', 
                   data={'chat_id': TELEGRAM_CHAT_ID, 'text': message})
@@ -115,7 +128,6 @@ def pipeline():
 
             logging.info(f'Считали {file_name}, размер {file_size}')
 
-        raise ValueError('лошара')    
         return 'spark_preprocess'
 
 

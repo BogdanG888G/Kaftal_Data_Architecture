@@ -1,0 +1,42 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Airflow metrics
+  - job_name: 'airflow'
+    static_configs:
+      - targets: ['airflow:8080']
+    metrics_path: '/metrics'
+
+  # Spark Master
+  - job_name: 'spark-master'
+    static_configs:
+      - targets: ['spark-master:8082']
+
+  # Spark Worker
+  - job_name: 'spark-worker'
+    static_configs:
+      - targets: ['spark-worker:8081']
+
+  # MinIO
+  - job_name: 'minio'
+    static_configs:
+      - targets: ['minio:9000']
+    metrics_path: '/minio/v2/metrics/cluster'
+
+  # Trino
+  - job_name: 'trino'
+    static_configs:
+      - targets: ['trino:8080']
+    metrics_path: '/v1/jmx/mbean'
+
+  # ClickHouse
+  - job_name: 'clickhouse'
+    static_configs:
+      - targets: ['clickhouse:9009']
+
+  # Prometheus сам себя
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

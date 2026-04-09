@@ -1,0 +1,7 @@
+data_source iceberg_via_trino:
+  type: trino
+  host: localhost
+  port: 8085
+  http_scheme: http
+  catalog: iceberg
+  schema: silver
