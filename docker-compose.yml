@@ -27,6 +27,7 @@ services:
       - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
       - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
       - ${AIRFLOW_PROJ_DIR:-.}/jobs:/opt/airflow/jobs
+      - ${AIRFLOW_PROJ_DIR:-.}/archive:/opt/airflow/archive
       - ./dbt_part:/opt/airflow/dbt
       - ./soda:/opt/airflow/soda
     user: "${AIRFLOW_UID:-50000}:0"

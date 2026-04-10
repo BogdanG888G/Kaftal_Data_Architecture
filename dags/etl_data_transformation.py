@@ -78,7 +78,7 @@ def pipeline():
     wait_for_data = FileSensor(
         task_id = 'wait_for_data', 
         fs_conn_id = 'folder_connect',
-        filepath = '/opt/airflow/data/*.csv',
+        filepath = '/opt/airflow/data/',
         mode = 'reschedule',
         poke_interval = 20,
         timeout = 60,
