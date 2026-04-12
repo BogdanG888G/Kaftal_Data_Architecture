@@ -3,22 +3,12 @@ services:
     build:
       context: .
     container_name: airflow
-    networks:
-      - default
     ports:
       - "8080:8080"
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__WEBSERVER__BASE_URL: http://localhost:8080
       AIRFLOW__CORE__FERNET_KEY: 'zTvhk3s8LqFnVVm5kL8p4Ht6j9DnBzWr2qM5sP7xY1A='
-      AIRFLOW__LOGGING__REMOTE_LOGGING: 'false'
-      AIRFLOW__CORE__HOSTNAME_CALLABLE: 'airflow.utils.net.get_host_ip_address'
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
-      # Фиксированные креды для standalone
-      _AIRFLOW_WWW_USER_USERNAME: admin
-      _AIRFLOW_WWW_USER_PASSWORD: admin123
       DBT_PROFILES_DIR: /opt/airflow/dbt
     volumes:
       - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
@@ -96,7 +86,7 @@ services:
     container_name: spark-worker
     environment:
       - SPARK_WORKER_CORES=2
-      - SPARK_WORKER_MEMORY=1g
+      - SPARK_WORKER_MEMORY=2g
       - SPARK_MASTER=spark://spark-master:7077
     command: >
       /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
@@ -127,19 +117,21 @@ services:
       - default
 
   jupyter:
-    image: jupyter/pyspark-notebook:latest
+    image: quay.io/jupyter/pyspark-notebook:spark-3.5.1
     container_name: jupyter
     ports:
       - "8888:8888"
     environment:
       JUPYTER_ENABLE_LAB: "yes"
-      SPARK_MASTER: "spark://spark-master:7077"
-      GRANT_SUDO: "yes"
       JUPYTER_TOKEN: ""
     volumes:
       - ./notebooks:/home/jovyan/work
       - ./data:/home/jovyan/data
-    command: start-notebook.sh --NotebookApp.token='' --NotebookApp.password=''
+    command: >
+      bash -c "
+        pip install boto3 &&
+        start-notebook.sh --NotebookApp.token='' --NotebookApp.password=''
+      "
     depends_on:
       - spark-master
       - spark-worker
