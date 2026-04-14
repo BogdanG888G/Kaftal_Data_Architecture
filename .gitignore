@@ -3,4 +3,5 @@ logs/
 venv
 data/*.csv
 data/*.xlsx
+data/*.ipynb*
 archive/

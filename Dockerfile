@@ -20,6 +20,11 @@ RUN mkdir -p /opt/spark/jars && \
     wget -q https://repo1.maven.org/maven2/org/wildfly/openssl/wildfly-openssl/1.0.7.Final/wildfly-openssl-1.0.7.Final.jar && \
     chown -R airflow:root /opt/spark/jars
 
+RUN mkdir -p /home/airflow/.ivy2/cache /home/airflow/.ivy2/jars && \
+    chown -R airflow:root /home/airflow/.ivy2 && \
+    chmod -R 775 /home/airflow/.ivy2
+
+
 ENV SPARK_JARS_DIR=/opt/spark/jars
 
 USER airflow
@@ -30,7 +35,7 @@ RUN pip install --upgrade pip && \
     pip install --no-cache-dir \
     apache-airflow-providers-apache-spark \
     apache-airflow-providers-amazon \
-    pyspark==3.5.3 \
+    pyspark==3.5.1 \
     boto3 \
     pyarrow \
     dbt-core \
