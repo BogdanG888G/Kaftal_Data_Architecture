@@ -293,8 +293,8 @@ for object in files:
     final_df = final_df.withColumn('average_sell_price', coalesce(col('average_sell_price'), col('sales_amount_rub') / col('sales_quantity')))
 
 
-    final_df.filter(final_df.average_cost_price > 0)
-    final_df.filter(final_df.average_sell_price > 0)
+    final_df = final_df.filter(final_df.average_cost_price > 0)
+    final_df = final_df.filter(final_df.average_sell_price > 0)
 
     
     res = spark.sql(f'''
