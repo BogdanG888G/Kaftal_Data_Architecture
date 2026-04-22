@@ -1,6 +1,7 @@
 .env
 logs/
 venv
+data/*.xlsb
 data/*.csv
 data/*.xlsx
 data/*.ipynb*

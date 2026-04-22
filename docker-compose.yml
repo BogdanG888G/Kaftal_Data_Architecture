@@ -125,14 +125,14 @@ services:
       - "8888:8888"
     environment:
       JUPYTER_ENABLE_LAB: "yes"
-      JUPYTER_TOKEN: ""
+      JUPYTER_TOKEN: "ILOVESPARK67"
     volumes:
       - ./notebooks:/home/jovyan/work
       - ./data:/home/jovyan/data
     command: >
       bash -c "
         pip install boto3 &&
-        start-notebook.sh --NotebookApp.token='' --NotebookApp.password=''
+        start-notebook.sh --NotebookApp.token='ILOVESPARK67' --NotebookApp.password=''
       "
     depends_on:
       - spark-master
