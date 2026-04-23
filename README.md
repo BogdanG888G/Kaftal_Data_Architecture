@@ -1,3 +1,10 @@
+# Конфиги к подключению БД к BI
+
+Clickhouse: `clickhousedb://admin:123@clickhouse:8123/default`
+Iceberg: `trino://admin@trino:8080/iceberg`
+
+
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                   АРХИТЕКТУРА                                │

@@ -2,6 +2,7 @@ from airflow.sdk import task, dag
 from airflow.models import Variable
 from airflow.providers.standard.sensors.filesystem import FileSensor
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from airflow.utils.trigger_rule import TriggerRule
 
 import datetime
@@ -15,65 +16,120 @@ TG_CHAT_ID = Variable.get('TELEGRAM_CHAT_ID')
 
 
 def telegram_alert(context):
-
     dag_id = context['ti'].dag_id
     task = context['ti'].task_id
     ds = context['ds']
     error = context['exception']
     
-    message = f'Ошибка в даге <b>{dag_id}</b>, в задаче <b>{task}</b>, ошибка <b>{error}</b>, дата <b>{ds}</b>'
+    message = f'Ошибка в даге <b>{dag_id}</b>\nЗадача: <b>{task}</b>\nДата: <b>{ds}</b>\nОшибка: <b>{error}</b>'
 
-    requests.post(url = f'https://api.telegram.org/bot{TG_TOKEN}/Sendmessage', 
-                  data = {'chat_id': TG_CHAT_ID, 'text': message, 'parse_mode': 'HTML'})
-    
-
-
-@dag(
-    dag_id = 'etl_diksi',
-    start_date = datetime.datetime(year=2026, month=2, day=1),
-    schedule = '@daily',
-    catchup = False,
-    description = 'Автоматизация для Дикси',
-    tags = ['Spark', 'S3', 'diksi']
-)
-
-
-def pipeline():
-    
-    wait_for_files = FileSensor(
-        task_id = 'wait_for_files',
-        fs_conn_id = 'folder_connect',
-        filepath = '/opt/airflow/data/diksi*',
-        mode =  'poke',
-        timeout = 60,
-        on_failure_callback = telegram_alert
+    requests.post(
+        url=f'https://api.telegram.org/bot{TG_TOKEN}/sendMessage', 
+        data={'chat_id': TG_CHAT_ID, 'text': message, 'parse_mode': 'HTML'}
     )
 
 
-    @task(on_failure_callback = telegram_alert)
+def telegram_success():
+    message = 'Паплайн по Дикси успешно завершился'
 
+    requests.post(
+        url=f'https://api.telegram.org/bot{TG_TOKEN}/sendMessage', 
+        data={'chat_id': TG_CHAT_ID, 'text': message, 'parse_mode': 'HTML'}
+    )
+
+
+@dag(
+    dag_id='etl_diksi',
+    start_date=datetime.datetime(year=2026, month=2, day=1),
+    schedule='@daily',
+    catchup=False,
+    description='Автоматизация обработки данных для Дикси',
+    tags=['Spark', 'S3', 'diksi'],
+    on_success_callback=telegram_success
+)
+def pipeline():
+    
+    wait_for_files = FileSensor(
+        task_id='wait_for_files',
+        fs_conn_id='folder_connect',
+        filepath='/opt/airflow/data/diksi*',
+        mode='reschedule',
+        poke_interval=30,
+        timeout = 60,
+        on_failure_callback=telegram_alert
+    )
+
+    @task(
+        on_failure_callback=telegram_alert,
+        trigger_rule=TriggerRule.ALL_SUCCESS
+    )
     def load_to_s3_raw():
-                
         input_folder = '/opt/airflow/data/'
         output_folder = '/opt/airflow/archive/'
 
-        s3 = S3Hook(aws_conn_id = 's3_connect')
+        s3 = S3Hook(aws_conn_id='s3_connect')
 
+        files_processed = 0
+        
         for file in os.listdir(input_folder):
-
             if file.startswith('diksi'):
+                file_path = input_folder + file
 
-                file_name = input_folder + file
-
-                s3.load_file(filename = file_name, key = file, bucket_name = 'raw')
-
+                s3.load_file(
+                    filename=file_path, 
+                    key=file, 
+                    bucket_name='raw',
+                    replace=True
+                )
                 logging.info(f'Загрузили файл {file} в сырой слой')
 
-                shutil.move(src=file_name, dst=output_folder + file)
-
+                shutil.move(src=file_path, dst=output_folder + file)
                 logging.info(f'Архивировали файл {file}')
-        
+                
+                files_processed += 1
 
-    wait_for_files >> load_to_s3_raw()
+        if files_processed == 0:
+            logging.warning('Нет релевантных файлов для загрузки')
+        else:
+            logging.info(f'Всего обработано файлов: {files_processed}')
+
+    spark_processing = SparkSubmitOperator(
+        task_id='spark_processing',
+        conn_id='spark_connection',
+        trigger_rule=TriggerRule.ALL_DONE,
+        application='jobs/diksi_spark_processing.py',
+        on_failure_callback=telegram_alert,
+        deploy_mode='client',
+        conf={
+            'spark.jars.packages': (
+                'org.apache.hadoop:hadoop-aws:3.3.4,'
+                'com.amazonaws:aws-java-sdk-bundle:1.12.262,'
+                'org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.0,'
+                'org.apache.iceberg:iceberg-aws-bundle:1.5.0'
+            ),
+            'spark.sql.extensions': 'org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions',
+            'spark.sql.catalog.iceberg': 'org.apache.iceberg.spark.SparkCatalog',
+            'spark.sql.catalog.iceberg.type': 'rest',
+            'spark.sql.catalog.iceberg.uri': 'http://iceberg-rest:8181',
+            'spark.sql.catalog.iceberg.io-impl': 'org.apache.iceberg.aws.s3.S3FileIO',
+            'spark.sql.catalog.iceberg.s3.endpoint': 'http://minio:9000',
+            'spark.sql.catalog.iceberg.s3.access-key-id': 'minioadmin',
+            'spark.sql.catalog.iceberg.s3.secret-access-key': 'minioadmin',
+            'spark.sql.catalog.iceberg.s3.path-style-access': 'true',
+            'spark.sql.catalog.iceberg.client.region': 'us-east-1',
+            'spark.sql.catalog.iceberg.warehouse': 's3://warehouse',
+            'spark.hadoop.fs.s3a.endpoint': 'http://minio:9000',
+            'spark.hadoop.fs.s3a.access.key': 'minioadmin',
+            'spark.hadoop.fs.s3a.secret.key': 'minioadmin',
+            'spark.hadoop.fs.s3a.path.style.access': 'true',
+            'spark.hadoop.fs.s3a.impl': 'org.apache.hadoop.fs.s3a.S3AFileSystem',
+            'spark.pyspark.python': 'python3',
+            'spark.pyspark.driver.python': 'python3',
+        }
+    )
+
+    wait_for_files >> load_to_s3_raw() >> spark_processing
+
+
 
 pipeline()
