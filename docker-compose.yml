@@ -187,6 +187,9 @@ services:
       - SUPERSET_SECRET_KEY=supersecret123
       - ADMIN_USERNAME=admin
       - ADMIN_PASSWORD=admin
+      - SUPERSET_CONFIG_PATH=/app/superset_config.py
+    volumes:
+      - ./superset_config.py:/app/superset_config.py
     command: >
       bash -c "
         superset db upgrade &&
