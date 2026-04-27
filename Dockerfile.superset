@@ -1,9 +1,12 @@
-FROM apache/superset:latest
+FROM apache/superset:4.0.2
 
 USER root
 
-RUN uv pip install --no-cache-dir \
-    "clickhouse-connect>=0.5.0" \
-    "trino[sqlalchemy]"
+# Используем pip вместо uv
+RUN pip install --no-cache-dir \
+    "sqlalchemy>=1.4.0,<2.0.0" \
+    "psycopg2-binary>=2.9.9" \
+    "clickhouse-connect>=0.7.0,<0.9.0" \
+    "trino[sqlalchemy]>=0.320.0,<0.340.0"
 
 USER superset
