@@ -7,6 +7,13 @@ Iceberg: `trino://admin@trino:8080/iceberg`
 Postgres: `postgresql://airflow:airflow@postgres:5432/airflow`
 
 
+# Запуск dbt-моделей
+
+1) `source venv/bin/activate`
+2) cd `dbt_part`
+3) `dbt debug`
+
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                   АРХИТЕКТУРА                                │

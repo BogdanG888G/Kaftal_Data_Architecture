@@ -1,11 +1,11 @@
 sources:
-  - name: silver
-    description: "Сырые данные из Apache Iceberg"
-    schema: silver
+  - name: aushan_silver
+    description: "Данные Apache Iceberg"
+    schema: aushan_silver
     database: iceberg
     tables:
-      - name: 'sales'
-        description: 'Таблица с продажами'
-        columns:
-          - name: 'Номер строки'
-            description: 'Номер ID'
+      - name: sales
+        description: 'Данные Ашана, приведенные к одному виду'
+        columns: 
+        - name: 'year'
+          description: 'Год продажи'
