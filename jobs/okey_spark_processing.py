@@ -2,72 +2,14 @@ import boto3
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
 from datetime import datetime
-import requests
 import re as re_m
 
 spark = SparkSession.builder.appName('Iceberg Okey ETL').getOrCreate()
 print(f"✓ Spark: {spark.version}")
 
-def cleanup():
-    BASE = "http://iceberg-rest:8181/v1"
-    try: requests.delete(f"{BASE}/namespaces/okey_silver/tables/sales?purgeRequested=true")
-    except: pass
-    try:
-        s3 = boto3.client('s3', endpoint_url='http://minio:9000', aws_access_key_id='minioadmin', aws_secret_access_key='minioadmin')
-        ct = None
-        while True:
-            kw = {'Bucket': 'warehouse', 'Prefix': 'okey_silver/'}
-            if ct: kw['ContinuationToken'] = ct
-            objs = s3.list_objects_v2(**kw)
-            if 'Contents' in objs:
-                for o in objs['Contents']: s3.delete_object(Bucket='warehouse', Key=o['Key'])
-            if not objs.get('IsTruncated'): break
-            ct = objs.get('NextContinuationToken')
-    except: pass
-
-try:
-    spark.sql('CREATE NAMESPACE IF NOT EXISTS iceberg.okey_silver')
-    spark.sql('''
-        CREATE TABLE IF NOT EXISTS iceberg.okey_silver.sales (
-            year INT, month STRING, retail_chain STRING,
-            region_name STRING, city_name STRING, store_code STRING,
-            product_category_2 STRING, product_category_3 STRING,
-            product_category_4 STRING, product_category_5 STRING,
-            product_id STRING, product_name STRING, product_uni_name STRING,
-            brand STRING, vendor STRING, flavor STRING, weight_grams STRING,
-            sales_quantity INT, sales_amount_rub FLOAT, sales_cost_price FLOAT,
-            sales_tons FLOAT, average_cost_price FLOAT, average_sell_price FLOAT,
-            margin_rub FLOAT, margin_pct FLOAT, cost_price_rub FLOAT,
-            max_sell_price FLOAT, max_sell_price_region FLOAT, max_cost_price FLOAT,
-            stock_qty INT, stock_rub FLOAT,
-            file_name STRING, created_at DATE, updated_at DATE, period DATE
-        ) USING iceberg PARTITIONED BY (retail_chain, year, month)
-        LOCATION 's3://warehouse/okey_silver/sales'
-    ''')
-    print("✓ Таблица готова\n")
-except Exception as e:
-    print(f"⚠ {e}")
-    cleanup()
-    spark.sql('CREATE NAMESPACE IF NOT EXISTS iceberg.okey_silver')
-    spark.sql('''
-        CREATE TABLE iceberg.okey_silver.sales (
-            year INT, month STRING, retail_chain STRING,
-            region_name STRING, city_name STRING, store_code STRING,
-            product_category_2 STRING, product_category_3 STRING,
-            product_category_4 STRING, product_category_5 STRING,
-            product_id STRING, product_name STRING, product_uni_name STRING,
-            brand STRING, vendor STRING, flavor STRING, weight_grams STRING,
-            sales_quantity INT, sales_amount_rub FLOAT, sales_cost_price FLOAT,
-            sales_tons FLOAT, average_cost_price FLOAT, average_sell_price FLOAT,
-            margin_rub FLOAT, margin_pct FLOAT, cost_price_rub FLOAT,
-            max_sell_price FLOAT, max_sell_price_region FLOAT, max_cost_price FLOAT,
-            stock_qty INT, stock_rub FLOAT,
-            file_name STRING, created_at DATE, updated_at DATE, period DATE
-        ) USING iceberg PARTITIONED BY (retail_chain, year, month)
-        LOCATION 's3://warehouse/okey_silver/sales'
-    ''')
-    print("✓ Таблица создана\n")
-
+# ============================================================
+# КОНСТАНТЫ
+# ============================================================
 SILVER_COLUMNS = [
     'year', 'month', 'retail_chain', 'region_name', 'city_name', 'store_code',
     'product_category_2', 'product_category_3', 'product_category_4', 'product_category_5',
@@ -183,15 +125,12 @@ else:
                 if mm:
                     m3 = mm.group(1).lower()
                     full = SHORT_MONTH.get(m3, m3)
-                    if month_str is None:
-                        month_str = MONTH_MAPPING.get(full)
+                    if month_str is None: month_str = MONTH_MAPPING.get(full)
                 ym = re_m.search(r'(\d{2})-', p)
-                if ym and parsed_year is None:
-                    parsed_year = 2000 + int(ym.group(1))
+                if ym and parsed_year is None: parsed_year = 2000 + int(ym.group(1))
             df = df.drop('period_raw')
         
-        if 'retail_chain_raw' in df.columns:
-            df = df.drop('retail_chain_raw')
+        if 'retail_chain_raw' in df.columns: df = df.drop('retail_chain_raw')
         
         if month_str is None: month_str = 'Неизвестно'
         month_int = MONTH_MAPPING_INT.get(month_str, 1)
@@ -209,7 +148,7 @@ else:
                     df = df.withColumn(col_name, F.regexp_replace(df[col_name].cast('string'), ',', '.'))
                 except: pass
         
-        # ШАГ 5: average_*
+        # ШАГ 5: Средние цены
         if 'sales_quantity' in df.columns and 'sales_cost_price' in df.columns:
             df = df.withColumn('average_cost_price',
                 F.when(df['sales_quantity'].isNotNull() & (df['sales_quantity'] > 0),
@@ -232,7 +171,7 @@ else:
                 try:
                     df = df.withColumn(col_name, df[col_name].cast(dtype_str))
                 except Exception as e:
-                    print(f"  ⚠ {col_name} → {dtype_str}: {e}")
+                    print(f"  ⚠ {col_name}: {e}")
         
         print(f'Финальные колонки: {df.columns}')
         print('=' * 100)

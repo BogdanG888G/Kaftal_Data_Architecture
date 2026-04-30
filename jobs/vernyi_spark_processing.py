@@ -2,63 +2,13 @@ import boto3
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
 from datetime import datetime
-import requests
 
 spark = SparkSession.builder.appName('Iceberg Vernyi ETL').getOrCreate()
 print(f"✓ Spark: {spark.version}")
 
-def cleanup():
-    BASE = "http://iceberg-rest:8181/v1"
-    try: requests.delete(f"{BASE}/namespaces/vernyi_silver/tables/sales?purgeRequested=true")
-    except: pass
-    try:
-        s3 = boto3.client('s3', endpoint_url='http://minio:9000', aws_access_key_id='minioadmin', aws_secret_access_key='minioadmin')
-        ct = None
-        while True:
-            kw = {'Bucket': 'warehouse', 'Prefix': 'vernyi_silver/'}
-            if ct: kw['ContinuationToken'] = ct
-            objs = s3.list_objects_v2(**kw)
-            if 'Contents' in objs:
-                for o in objs['Contents']: s3.delete_object(Bucket='warehouse', Key=o['Key'])
-            if not objs.get('IsTruncated'): break
-            ct = objs.get('NextContinuationToken')
-    except: pass
-
-try:
-    spark.sql('CREATE NAMESPACE IF NOT EXISTS iceberg.vernyi_silver')
-    spark.sql('''
-        CREATE TABLE IF NOT EXISTS iceberg.vernyi_silver.sales (
-            year INT, month STRING, retail_chain STRING,
-            week_num INT, store_code STRING, address STRING, region_name STRING, city_name STRING,
-            product_category_3 STRING, product_category_4 STRING,
-            product_id STRING, product_name STRING,
-            vendor STRING, manufacturer STRING,
-            sales_quantity INT, sales_amount_rub FLOAT, sales_cost_price FLOAT,
-            average_cost_price FLOAT, average_sell_price FLOAT,
-            file_name STRING, created_at DATE, updated_at DATE, period DATE
-        ) USING iceberg PARTITIONED BY (retail_chain, year, month)
-        LOCATION 's3://warehouse/vernyi_silver/sales'
-    ''')
-    print("✓ Таблица готова\n")
-except Exception as e:
-    print(f"⚠ {e}")
-    cleanup()
-    spark.sql('CREATE NAMESPACE IF NOT EXISTS iceberg.vernyi_silver')
-    spark.sql('''
-        CREATE TABLE iceberg.vernyi_silver.sales (
-            year INT, month STRING, retail_chain STRING,
-            week_num INT, store_code STRING, address STRING, region_name STRING, city_name STRING,
-            product_category_3 STRING, product_category_4 STRING,
-            product_id STRING, product_name STRING,
-            vendor STRING, manufacturer STRING,
-            sales_quantity INT, sales_amount_rub FLOAT, sales_cost_price FLOAT,
-            average_cost_price FLOAT, average_sell_price FLOAT,
-            file_name STRING, created_at DATE, updated_at DATE, period DATE
-        ) USING iceberg PARTITIONED BY (retail_chain, year, month)
-        LOCATION 's3://warehouse/vernyi_silver/sales'
-    ''')
-    print("✓ Таблица создана\n")
-
+# ============================================================
+# КОНСТАНТЫ
+# ============================================================
 SILVER_COLUMNS = [
     'year', 'month', 'retail_chain',
     'week_num', 'store_code', 'address', 'region_name', 'city_name',
@@ -131,7 +81,7 @@ else:
         df = df.withColumn('created_at', F.lit(date_created))
         df = df.withColumn('updated_at', F.lit(date_created))
         
-        # ШАГ 3: Месяц и год из имени файла: vernyi_august_2025.csv
+        # ШАГ 3: Месяц и год из имени файла
         parts = file.replace('.csv', '').split('_')
         month_str, parsed_year = None, None
         for i, part in enumerate(parts):
@@ -168,8 +118,7 @@ else:
                     df = df.withColumn(col_name, F.regexp_replace(df[col_name].cast('string'), ',', '.'))
                 except: pass
         
-        # ШАГ 6: Расчет общей себестоимости
-        # sales_cost_price = average_cost_price * sales_quantity
+        # ШАГ 6: Общая себестоимость = средняя * количество
         if 'average_cost_price' in df.columns and 'sales_quantity' in df.columns:
             df = df.withColumn('sales_cost_price',
                 F.when(df['sales_quantity'].isNotNull() & (df['sales_quantity'] > 0),
@@ -187,7 +136,7 @@ else:
                 try:
                     df = df.withColumn(col_name, df[col_name].cast(dtype_str))
                 except Exception as e:
-                    print(f"  ⚠ {col_name} → {dtype_str}: {e}")
+                    print(f"  ⚠ {col_name}: {e}")
         
         print(f'Финальные колонки: {df.columns}')
         print('=' * 100)

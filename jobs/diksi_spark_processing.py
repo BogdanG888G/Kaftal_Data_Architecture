@@ -1,9 +1,8 @@
 import boto3
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import *
-from pyspark.sql.types import *
-import logging
+import pyspark.sql.functions as F
 from datetime import datetime
+import logging
 
 # ============================================================
 # SPARK SESSION
@@ -13,46 +12,6 @@ spark = SparkSession.builder \
     .getOrCreate()
 
 print(f"✓ Версия Spark: {spark.version}")
-
-# ============================================================
-# СОЗДАНИЕ НЕЙМСПЕЙСА И ТАБЛИЦЫ
-# ============================================================
-print("Создаем неймспейс и таблицу...")
-
-spark.sql('CREATE NAMESPACE IF NOT EXISTS iceberg.diksi_silver')
-
-spark.sql('''
-    CREATE TABLE IF NOT EXISTS iceberg.diksi_silver.sales (
-        year                INT,
-        month               STRING,
-        retail_chain        STRING,
-        region_name         STRING,
-        city_name           STRING,
-        address             STRING,
-        store_code          STRING,
-        product_category_3  STRING,
-        product_category_4  STRING,
-        product_category_5  STRING,
-        product_id          STRING,
-        product_name        STRING,
-        brand               STRING,
-        vendor              STRING,
-        sales_quantity      INT,
-        sales_amount_rub    FLOAT,
-        sales_cost_price    FLOAT,
-        average_cost_price  FLOAT,
-        average_sell_price  FLOAT,
-        file_name           STRING,
-        created_at          DATE,
-        updated_at          DATE,
-        period              DATE
-    )
-    USING iceberg
-    PARTITIONED BY (retail_chain, year, month)
-    LOCATION 's3://warehouse/diksi_silver/sales'
-''')
-
-print("✓ Таблица готова\n")
 
 # ============================================================
 # S3 CLIENT
@@ -66,30 +25,24 @@ s3 = boto3.client('s3',
 # ============================================================
 # КОНСТАНТЫ И МАППИНГИ
 # ============================================================
-SILVER_COLUMNS = {
-    'year': 'int',
-    'month': 'string',
-    'retail_chain': 'string',
-    'region_name': 'string',
-    'city_name': 'string',
-    'address': 'string',
-    'store_code': 'string',
-    'product_category_3': 'string',
-    'product_category_4': 'string',
-    'product_category_5': 'string',
-    'product_id': 'string',
-    'product_name': 'string',
-    'brand': 'string',
-    'vendor': 'string',
-    'sales_quantity': 'int',
-    'sales_amount_rub': 'float',
-    'sales_cost_price': 'float',
-    'average_cost_price': 'float',
-    'average_sell_price': 'float',
-    'file_name': 'string',
-    'created_at': 'date',
-    'updated_at': 'date',
-    'period': 'date'
+SILVER_COLUMNS = [
+    'year', 'month', 'retail_chain',
+    'region_name', 'city_name', 'address', 'store_code',
+    'product_category_3', 'product_category_4', 'product_category_5',
+    'product_id', 'product_name', 'brand', 'vendor',
+    'sales_quantity', 'sales_amount_rub', 'sales_cost_price',
+    'average_cost_price', 'average_sell_price',
+    'file_name', 'created_at', 'updated_at', 'period'
+]
+
+SILVER_TYPES = {
+    'year': 'int', 'month': 'string', 'retail_chain': 'string',
+    'region_name': 'string', 'city_name': 'string', 'address': 'string', 'store_code': 'string',
+    'product_category_3': 'string', 'product_category_4': 'string', 'product_category_5': 'string',
+    'product_id': 'string', 'product_name': 'string', 'brand': 'string', 'vendor': 'string',
+    'sales_quantity': 'int', 'sales_amount_rub': 'float', 'sales_cost_price': 'float',
+    'average_cost_price': 'float', 'average_sell_price': 'float',
+    'file_name': 'string', 'created_at': 'date', 'updated_at': 'date', 'period': 'date'
 }
 
 SILVER_MAPPING = {
@@ -121,7 +74,7 @@ MONTH_MAPPING_INT = {
 }
 
 # ============================================================
-# ОСНОВНОЙ ЦИКЛ ОБРАБОТКИ
+# ОСНОВНОЙ ЦИКЛ
 # ============================================================
 objects = s3.list_objects_v2(Bucket='raw', Prefix='diksi_')
 
@@ -144,9 +97,7 @@ else:
         print(f'Обработка: {file_name}')
         print('=' * 100)
         
-        # Читаем CSV
         df = spark.read.csv(file_name, sep=';', header=True, inferSchema=False)
-        
         print(f'✓ Прочитано строк: {df.count()}')
         print(f'Исходные колонки: {df.columns}')
         print('=' * 100)
@@ -164,11 +115,11 @@ else:
             if new_name:
                 df = df.withColumnRenamed(column, new_name)
         
-        # ШАГ 3: Служебные колонки
-        df = df.withColumn('retail_chain', lit('Дикси'))
-        df = df.withColumn('file_name', lit(file[:-4]))
-        df = df.withColumn('created_at', lit(date_created))
-        df = df.withColumn('updated_at', lit(date_created))
+        # ШАГ 3: Служебные
+        df = df.withColumn('retail_chain', F.lit('Дикси'))
+        df = df.withColumn('file_name', F.lit(file[:-4]))
+        df = df.withColumn('created_at', F.lit(date_created))
+        df = df.withColumn('updated_at', F.lit(date_created))
         
         # ШАГ 4: Дата из имени файла
         parts = file.split('_')
@@ -176,90 +127,91 @@ else:
         month_int = MONTH_MAPPING_INT.get(month_str)
         parsed_year = parts[2].replace('.csv', '')
         
-        df = df.withColumn('month', lit(month_str))
-        df = df.withColumn('year', lit(int(parsed_year)))
+        df = df.withColumn('month', F.lit(month_str))
+        df = df.withColumn('year', F.lit(int(parsed_year)))
         period_done = datetime.strptime(f'{parsed_year}-{month_int}-01', '%Y-%m-%d')
-        df = df.withColumn('period', lit(period_done))
+        df = df.withColumn('period', F.lit(period_done))
         
-        # ШАГ 5: Извлечение города и региона (Spark SQL, без UDF)
+        # ШАГ 5: Город и регион из адреса
         if 'address' in df.columns:
-            # Город
             df = df.withColumn('city_name', 
-                coalesce(
-                    regexp_extract(col('address'), r'г\.\s*([^,]+)', 1),
-                    regexp_extract(col('address'), r'г\s+([^,]+)', 1)
+                F.coalesce(
+                    F.regexp_extract(df['address'], r'г\.\s*([^,]+)', 1),
+                    F.regexp_extract(df['address'], r'г\s+([^,]+)', 1)
                 )
             )
-            # Регион
             df = df.withColumn('region_name',
-                coalesce(
-                    regexp_extract(col('address'), r'([^,]*область[^,]*)', 1),
-                    regexp_extract(col('address'), r'([^,]*край[^,]*)', 1),
-                    regexp_extract(col('address'), r'([^,]*республика[^,]*)', 1),
-                    regexp_extract(col('address'), r'([^,]*АО[^,]*)', 1)
+                F.coalesce(
+                    F.regexp_extract(df['address'], r'([^,]*область[^,]*)', 1),
+                    F.regexp_extract(df['address'], r'([^,]*край[^,]*)', 1),
+                    F.regexp_extract(df['address'], r'([^,]*республика[^,]*)', 1),
+                    F.regexp_extract(df['address'], r'([^,]*АО[^,]*)', 1)
                 )
             )
         
-        # ШАГ 6: brand = vendor (ВТМ для Дикси)
+        # ШАГ 6: brand = vendor
         if 'vendor' in df.columns:
-            df = df.withColumn('brand', col('vendor'))
+            df = df.withColumn('brand', df['vendor'])
         
-        # ШАГ 7: Замена запятых на точки в числах
+        # ШАГ 7: Замена запятых
         for col_name in ['sales_amount_rub', 'sales_cost_price']:
             if col_name in df.columns:
-                df = df.withColumn(col_name, regexp_replace(col(col_name), ',', '.'))
+                df = df.withColumn(col_name, F.regexp_replace(df[col_name], ',', '.'))
         
         # ШАГ 8: Недостающие колонки
-        remaining_cols = set(SILVER_COLUMNS.keys()) - set(df.columns)
-        print(f'Оставшиеся колонки (заполним NULL): {remaining_cols}')
+        remaining_cols = set(SILVER_COLUMNS) - set(df.columns)
+        print(f'Оставшиеся колонки (NULL): {remaining_cols}')
         
         for column in remaining_cols:
-            df = df.withColumn(column, lit(None))
+            df = df.withColumn(column, F.lit(None))
         
-        # ШАГ 9: Приведение типов
+        # ШАГ 9: Типы
         for column in df.columns:
-            dtype = SILVER_COLUMNS.get(column)
-            if dtype:
-                df = df.withColumn(column, col(column).cast(dtype))
+            dtype_str = SILVER_TYPES.get(column)
+            if dtype_str:
+                try:
+                    df = df.withColumn(column, df[column].cast(dtype_str))
+                except Exception as e:
+                    print(f"  ⚠ {column}: {e}")
         
         print('Финальные колонки:')
         print(df.columns)
         print('=' * 100)
         
         # ШАГ 10: Финальный датафрейм
-        final_df = df.select(*SILVER_COLUMNS.keys())
+        final_df = df.select(*SILVER_COLUMNS)
         
-        # ШАГ 11: Фильтрация строк
+        # ШАГ 11: Фильтрация
         final_df = final_df.filter(
-            (col('sales_quantity').isNull()) | (col('sales_quantity') > 0)
+            df['sales_quantity'].isNull() | (df['sales_quantity'] > 0)
         )
         final_df = final_df.filter(
-            (col('sales_amount_rub').isNull()) | (col('sales_amount_rub') > 0)
+            df['sales_amount_rub'].isNull() | (df['sales_amount_rub'] > 0)
         )
         final_df = final_df.filter(
-            (col('sales_cost_price').isNull()) | (col('sales_cost_price') > 0)
+            df['sales_cost_price'].isNull() | (df['sales_cost_price'] > 0)
         )
         
         # ШАГ 12: Расчет средних цен
         final_df = final_df.withColumn(
             'average_cost_price', 
-            coalesce(
-                col('average_cost_price'), 
-                when((col('sales_quantity').isNotNull()) & (col('sales_quantity') > 0), 
-                     col('sales_cost_price') / col('sales_quantity'))
+            F.coalesce(
+                df['average_cost_price'], 
+                F.when(df['sales_quantity'].isNotNull() & (df['sales_quantity'] > 0), 
+                     df['sales_cost_price'] / df['sales_quantity'])
             )
         )
         
         final_df = final_df.withColumn(
             'average_sell_price', 
-            coalesce(
-                col('average_sell_price'), 
-                when((col('sales_quantity').isNotNull()) & (col('sales_quantity') > 0), 
-                     col('sales_amount_rub') / col('sales_quantity'))
+            F.coalesce(
+                df['average_sell_price'], 
+                F.when(df['sales_quantity'].isNotNull() & (df['sales_quantity'] > 0), 
+                     df['sales_amount_rub'] / df['sales_quantity'])
             )
         )
         
-        # ШАГ 13: Проверка на дубликаты и запись
+        # ШАГ 13: Проверка дубликатов и запись
         try:
             res = spark.sql(f'''
                 SELECT COUNT(*) 
@@ -267,21 +219,18 @@ else:
                 WHERE file_name = '{file[:-4]}'
             ''').first()
             file_exists = res[0] > 0
-        except Exception as e:
-            logging.warning(f'⚠ Ошибка проверки дубликатов: {e}')
+        except:
             file_exists = False
         
         if not file_exists:
-            rows_before = final_df.count()
-            print(f'Записываем {rows_before} строк в iceberg.diksi_silver.sales...')
-            
+            rows = final_df.count()
+            print(f'Записываем {rows} строк...')
             final_df.writeTo('iceberg.diksi_silver.sales') \
                 .partitionedBy('retail_chain', 'year', 'month') \
                 .append()
-            
-            print(f'✓ Файл {file} успешно занесен в таблицу ({rows_before} строк)')
+            print(f'✓ {file} → {rows} строк')
         else:
-            print(f'⊘ Данные из файла {file} уже есть в таблице, пропускаем')
+            print(f'⊘ {file} уже есть в таблице')
         
         print('=' * 100)
         print()

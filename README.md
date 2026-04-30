@@ -1,3 +1,7 @@
+Подключение к ВМ:
+
+`ssh -l bogdangor 213.165.222.200`
+
 # Конфиги к подключению БД к BI
 
 Clickhouse: `clickhousedb://admin:123@clickhouse:8123/default`

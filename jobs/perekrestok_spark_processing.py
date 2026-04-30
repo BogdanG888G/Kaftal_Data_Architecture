@@ -2,66 +2,14 @@ import boto3
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
 from datetime import datetime
-import requests
 import re as re_m
 
 spark = SparkSession.builder.appName('Iceberg Perekrestok ETL').getOrCreate()
 print(f"✓ Spark: {spark.version}")
 
-def cleanup():
-    BASE = "http://iceberg-rest:8181/v1"
-    try: requests.delete(f"{BASE}/namespaces/perekrestok_silver/tables/sales?purgeRequested=true")
-    except: pass
-    try:
-        s3 = boto3.client('s3', endpoint_url='http://minio:9000', aws_access_key_id='minioadmin', aws_secret_access_key='minioadmin')
-        ct = None
-        while True:
-            kw = {'Bucket': 'warehouse', 'Prefix': 'perekrestok_silver/'}
-            if ct: kw['ContinuationToken'] = ct
-            objs = s3.list_objects_v2(**kw)
-            if 'Contents' in objs:
-                for o in objs['Contents']: s3.delete_object(Bucket='warehouse', Key=o['Key'])
-            if not objs.get('IsTruncated'): break
-            ct = objs.get('NextContinuationToken')
-    except: pass
-
-try:
-    spark.sql('CREATE NAMESPACE IF NOT EXISTS iceberg.perekrestok_silver')
-    spark.sql('''
-        CREATE TABLE IF NOT EXISTS iceberg.perekrestok_silver.sales (
-            year INT, month STRING, retail_chain STRING,
-            district_name STRING, region_name STRING, city_name STRING, address STRING,
-            store_code STRING, store_name STRING, rc STRING,
-            product_category_3 STRING, product_category_4 STRING, base_type STRING,
-            product_id STRING, product_name STRING, product_uni_name STRING,
-            brand STRING, vendor STRING, flavor STRING, weight_grams STRING,
-            sales_quantity INT, sales_amount_rub FLOAT, sales_cost_price FLOAT, sales_tons FLOAT,
-            average_cost_price FLOAT, average_sell_price FLOAT,
-            file_name STRING, created_at DATE, updated_at DATE, period DATE
-        ) USING iceberg PARTITIONED BY (retail_chain, year, month)
-        LOCATION 's3://warehouse/perekrestok_silver/sales'
-    ''')
-    print("✓ Таблица готова\n")
-except Exception as e:
-    print(f"⚠ {e}")
-    cleanup()
-    spark.sql('CREATE NAMESPACE IF NOT EXISTS iceberg.perekrestok_silver')
-    spark.sql('''
-        CREATE TABLE iceberg.perekrestok_silver.sales (
-            year INT, month STRING, retail_chain STRING,
-            district_name STRING, region_name STRING, city_name STRING, address STRING,
-            store_code STRING, store_name STRING, rc STRING,
-            product_category_3 STRING, product_category_4 STRING, base_type STRING,
-            product_id STRING, product_name STRING, product_uni_name STRING,
-            brand STRING, vendor STRING, flavor STRING, weight_grams STRING,
-            sales_quantity INT, sales_amount_rub FLOAT, sales_cost_price FLOAT, sales_tons FLOAT,
-            average_cost_price FLOAT, average_sell_price FLOAT,
-            file_name STRING, created_at DATE, updated_at DATE, period DATE
-        ) USING iceberg PARTITIONED BY (retail_chain, year, month)
-        LOCATION 's3://warehouse/perekrestok_silver/sales'
-    ''')
-    print("✓ Таблица создана\n")
-
+# ============================================================
+# КОНСТАНТЫ
+# ============================================================
 SILVER_COLUMNS = [
     'year', 'month', 'retail_chain',
     'district_name', 'region_name', 'city_name', 'address',
@@ -86,7 +34,6 @@ SILVER_TYPES = {
     'file_name': 'string', 'created_at': 'date', 'updated_at': 'date', 'period': 'date'
 }
 
-# V1: perekrestok_ceptember_2024 (без адресов)
 MAPPING_V1 = {
     'Период': 'period_raw', 'Сеть': 'retail_chain_raw',
     'Категория': 'product_category_3', 'Категория 2': 'product_category_4',
@@ -97,7 +44,6 @@ MAPPING_V1 = {
     'Продажи, тонн ': 'sales_tons', 'Себест., руб ': 'sales_cost_price',
 }
 
-# V2: perekrestok_december_2024 (с адресами)
 MAPPING_V2 = {
     'Филиал ': 'district_name', 'Регион': 'region_name', 'Город ': 'city_name', 'Адрес': 'address',
     'РЦ': 'rc', 'Сеть ': 'retail_chain_raw', 'Категория': 'product_category_3',
@@ -140,7 +86,6 @@ else:
         print(f'Колонки: {df.columns}')
         print('=' * 100)
         
-        # Определяем формат: V2 имеет "Филиал"
         is_v2 = any('Филиал' in c for c in df.columns)
         MAPPING = MAPPING_V2 if is_v2 else MAPPING_V1
         
@@ -181,8 +126,7 @@ else:
             df = df.drop('period_raw')
         
         if 'retail_chain_raw' in df.columns: df = df.drop('retail_chain_raw')
-        if 'store_name_full' in df.columns:
-            df = df.withColumnRenamed('store_name_full', 'store_name')
+        if 'store_name_full' in df.columns: df = df.withColumnRenamed('store_name_full', 'store_name')
         
         if month_str is None: month_str = 'Неизвестно'
         month_int = MONTH_MAPPING_INT.get(month_str, 1)
@@ -193,10 +137,9 @@ else:
         period_done = datetime.strptime(f'{parsed_year}-{month_int}-01', '%Y-%m-%d')
         df = df.withColumn('period', F.lit(period_done))
         
-        # ШАГ 4: Для V2 — парсим город из city_name "г.Киров" → "Киров"
+        # ШАГ 4: Чистим город "г.Киров" → "Киров"
         if 'city_name' in df.columns:
-            df = df.withColumn('city_name', 
-                F.regexp_replace(df['city_name'], r'^г\.', ''))
+            df = df.withColumn('city_name', F.regexp_replace(df['city_name'], r'^г\.', ''))
         
         # ШАГ 5: Запятые → точки
         for col_name in df.columns:
@@ -205,7 +148,7 @@ else:
                     df = df.withColumn(col_name, F.regexp_replace(df[col_name].cast('string'), ',', '.'))
                 except: pass
         
-        # ШАГ 6: average_*
+        # ШАГ 6: Средние цены
         if 'sales_quantity' in df.columns and 'sales_cost_price' in df.columns:
             df = df.withColumn('average_cost_price',
                 F.when(df['sales_quantity'].isNotNull() & (df['sales_quantity'] > 0),
@@ -228,7 +171,7 @@ else:
                 try:
                     df = df.withColumn(col_name, df[col_name].cast(dtype_str))
                 except Exception as e:
-                    print(f"  ⚠ {col_name} → {dtype_str}: {e}")
+                    print(f"  ⚠ {col_name}: {e}")
         
         print(f'Финальные колонки: {df.columns}')
         print('=' * 100)

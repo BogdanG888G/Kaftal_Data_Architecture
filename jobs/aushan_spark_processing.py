@@ -1,97 +1,11 @@
 import boto3
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import *
-from pyspark.sql.types import *
-import logging
+import pyspark.sql.functions as F
 from datetime import datetime
-import requests
-import re as re_module
+import re as re_m
 
-# ============================================================
-# SPARK SESSION
-# ============================================================
-spark = SparkSession.builder \
-    .appName('Iceberg Aushan ETL') \
-    .getOrCreate()
-
-print(f"✓ Версия Spark: {spark.version}")
-
-# ============================================================
-# ОЧИСТКА КАТАЛОГА
-# ============================================================
-def cleanup_aushan_catalog():
-    BASE = "http://iceberg-rest:8181/v1"
-    NS = "aushan_silver"
-    TABLE = "sales"
-    
-    print("🔧 Чиним каталог Ашан...")
-    try:
-        r = requests.delete(f"{BASE}/namespaces/{NS}/tables/{TABLE}?purgeRequested=true")
-        if r.status_code in [200, 204]:
-            print(f"  ✓ Таблица удалена")
-    except Exception as e:
-        print(f"  ⚠ {e}")
-    
-    try:
-        s3 = boto3.client('s3', endpoint_url='http://minio:9000',
-                          aws_access_key_id='minioadmin', aws_secret_access_key='minioadmin')
-        deleted = 0
-        ct = None
-        while True:
-            kw = {'Bucket': 'warehouse', 'Prefix': 'aushan_silver/'}
-            if ct:
-                kw['ContinuationToken'] = ct
-            objs = s3.list_objects_v2(**kw)
-            if 'Contents' in objs:
-                for obj in objs['Contents']:
-                    s3.delete_object(Bucket='warehouse', Key=obj['Key'])
-                    deleted += 1
-            if not objs.get('IsTruncated'):
-                break
-            ct = objs.get('NextContinuationToken')
-        print(f"  ✓ Удалено {deleted} объектов из MinIO")
-    except Exception as e:
-        print(f"  ⚠ MinIO: {e}")
-
-# ============================================================
-# СОЗДАНИЕ ТАБЛИЦЫ
-# ============================================================
-try:
-    spark.sql('CREATE NAMESPACE IF NOT EXISTS iceberg.aushan_silver')
-    spark.sql('''
-        CREATE TABLE IF NOT EXISTS iceberg.aushan_silver.sales (
-            year INT, month STRING, retail_chain STRING, store_format STRING,
-            region_name STRING, city_name STRING, address STRING, store_code STRING,
-            product_segment STRING, family_code STRING, family_name STRING,
-            product_id STRING, product_name STRING, vendor_code STRING, vendor STRING,
-            sales_quantity INT, sales_amount_rub FLOAT, sales_cost_price FLOAT, sales_kg FLOAT,
-            average_cost_price FLOAT, average_sell_price FLOAT, margin_rub FLOAT,
-            write_off_rub FLOAT, write_off_qty INT, loss_rub FLOAT, loss_qty INT, promo_sales_rub FLOAT,
-            week_num INT, file_name STRING, created_at DATE, updated_at DATE, period DATE
-        )
-        USING iceberg PARTITIONED BY (retail_chain, year, month)
-        LOCATION 's3://warehouse/aushan_silver/sales'
-    ''')
-    print("✓ Таблица готова\n")
-except Exception as e:
-    print(f"⚠ Ошибка: {e}")
-    cleanup_aushan_catalog()
-    spark.sql('CREATE NAMESPACE IF NOT EXISTS iceberg.aushan_silver')
-    spark.sql('''
-        CREATE TABLE iceberg.aushan_silver.sales (
-            year INT, month STRING, retail_chain STRING, store_format STRING,
-            region_name STRING, city_name STRING, address STRING, store_code STRING,
-            product_segment STRING, family_code STRING, family_name STRING,
-            product_id STRING, product_name STRING, vendor_code STRING, vendor STRING,
-            sales_quantity INT, sales_amount_rub FLOAT, sales_cost_price FLOAT, sales_kg FLOAT,
-            average_cost_price FLOAT, average_sell_price FLOAT, margin_rub FLOAT,
-            write_off_rub FLOAT, write_off_qty INT, loss_rub FLOAT, loss_qty INT, promo_sales_rub FLOAT,
-            week_num INT, file_name STRING, created_at DATE, updated_at DATE, period DATE
-        )
-        USING iceberg PARTITIONED BY (retail_chain, year, month)
-        LOCATION 's3://warehouse/aushan_silver/sales'
-    ''')
-    print("✓ Таблица создана\n")
+spark = SparkSession.builder.appName('Iceberg Aushan ETL').getOrCreate()
+print(f"✓ Spark: {spark.version}")
 
 # ============================================================
 # КОНСТАНТЫ
@@ -106,7 +20,6 @@ SILVER_COLUMNS = [
     'week_num', 'file_name', 'created_at', 'updated_at', 'period'
 ]
 
-# Типы как строки для .cast()
 SILVER_TYPES = {
     'year': 'int', 'month': 'string', 'retail_chain': 'string',
     'store_format': 'string', 'region_name': 'string', 'city_name': 'string',
@@ -147,48 +60,28 @@ MONTH_MAPPING = {
     'july': 'Июль', 'august': 'Август', 'september': 'Сентябрь',
     'october': 'Октябрь', 'november': 'Ноябрь', 'december': 'Декабрь',
 }
+MONTH_MAPPING_INT = {v: k for k, v in {1: 'Январь', 2: 'Февраль', 3: 'Март', 4: 'Апрель', 5: 'Май', 6: 'Июнь', 7: 'Июль', 8: 'Август', 9: 'Сентябрь', 10: 'Октябрь', 11: 'Ноябрь', 12: 'Декабрь'}.items()}
+SHORT_MONTH = {'jan': 'january', 'feb': 'february', 'mar': 'march', 'apr': 'april', 'may': 'may', 'jun': 'june', 'jul': 'july', 'aug': 'august', 'sep': 'september', 'oct': 'october', 'nov': 'november', 'dec': 'december'}
 
-MONTH_MAPPING_INT = {
-    'Январь': 1, 'Февраль': 2, 'Март': 3, 'Апрель': 4,
-    'Май': 5, 'Июнь': 6, 'Июль': 7, 'Август': 8,
-    'Сентябрь': 9, 'Октябрь': 10, 'Ноябрь': 11, 'Декабрь': 12
-}
-
-# ============================================================
-# S3 CLIENT
-# ============================================================
-s3 = boto3.client('s3', 
-                  endpoint_url='http://minio:9000',
-                  aws_access_key_id='minioadmin',
-                  aws_secret_access_key='minioadmin')
-
-# ============================================================
-# ОСНОВНОЙ ЦИКЛ
-# ============================================================
+s3 = boto3.client('s3', endpoint_url='http://minio:9000', aws_access_key_id='minioadmin', aws_secret_access_key='minioadmin')
 objects = s3.list_objects_v2(Bucket='raw', Prefix='aushan_')
 
 if 'Contents' not in objects:
-    print("⚠ Нет файлов aushan_ в бакете raw")
+    print("⚠ Нет файлов aushan_")
 else:
-    files = objects['Contents']
-    year_cr, month_cr, day_cr = datetime.now().year, datetime.now().month, datetime.now().day
-    date_created = f'{year_cr}-{month_cr:02d}-{day_cr:02d}'
+    y, m, d = datetime.now().year, datetime.now().month, datetime.now().day
+    date_created = f'{y}-{m:02d}-{d:02d}'
 
-    for obj in files:
+    for obj in objects['Contents']:
         file = obj['Key']
-        if not file.endswith('.csv'):
-            continue
+        if not file.endswith('.csv'): continue
         
         file_name = f's3a://raw/{file}'
-        
         print('=' * 100)
         print(f'Обработка: {file_name}')
-        print('=' * 100)
         
         df = spark.read.csv(file_name, sep=';', header=True, inferSchema=False)
         print(f'✓ Строк: {df.count()}, Колонок: {len(df.columns)}')
-        print(f'Исходные колонки: {df.columns}')
-        print('=' * 100)
         
         # ШАГ 1: Переименование
         for old_name in df.columns:
@@ -197,15 +90,14 @@ else:
                 df = df.withColumnRenamed(old_name, new_name)
         
         # ШАГ 2: Служебные
-        df = df.withColumn('retail_chain', lit('Ашан'))
-        df = df.withColumn('file_name', lit(file[:-5]))  # -5 = ".csv"
-        df = df.withColumn('created_at', lit(date_created))
-        df = df.withColumn('updated_at', lit(date_created))
+        df = df.withColumn('retail_chain', F.lit('Ашан'))
+        df = df.withColumn('file_name', F.lit(file[:-4]))
+        df = df.withColumn('created_at', F.lit(date_created))
+        df = df.withColumn('updated_at', F.lit(date_created))
         
         # ШАГ 3: Месяц и год
         parts = file.replace('.csv', '').split('_')
         month_str, parsed_year = None, None
-        
         for i, part in enumerate(parts):
             mc = MONTH_MAPPING.get(part.lower())
             if mc:
@@ -215,107 +107,88 @@ else:
                 break
         
         if 'month_raw' in df.columns:
-            first_month = df.select('month_raw').first()
-            if first_month and first_month[0]:
-                month_raw_val = str(first_month[0])
-                for m_name in MONTH_MAPPING_INT:
-                    if m_name in month_raw_val:
-                        if month_str is None:
-                            month_str = m_name
-                        ym = re_module.search(r'(\d{4})', month_raw_val)
-                        if ym and parsed_year is None:
-                            parsed_year = int(ym.group(1))
+            first = df.select('month_raw').first()
+            if first and first[0]:
+                mrv = str(first[0])
+                for mn in MONTH_MAPPING_INT:
+                    if mn in mrv:
+                        if month_str is None: month_str = mn
+                        ym = re_m.search(r'(\d{4})', mrv)
+                        if ym and parsed_year is None: parsed_year = int(ym.group(1))
                         break
             df = df.drop('month_raw')
         
-        if month_str is None:
-            month_str = 'Неизвестно'
+        if month_str is None: month_str = 'Неизвестно'
         month_int = MONTH_MAPPING_INT.get(month_str, 1)
-        if parsed_year is None:
-            parsed_year = year_cr
+        if parsed_year is None: parsed_year = y
         
-        df = df.withColumn('month', lit(month_str))
-        df = df.withColumn('year', lit(parsed_year))
+        df = df.withColumn('month', F.lit(month_str))
+        df = df.withColumn('year', F.lit(parsed_year))
         period_done = datetime.strptime(f'{parsed_year}-{month_int}-01', '%Y-%m-%d')
-        df = df.withColumn('period', lit(period_done))
+        df = df.withColumn('period', F.lit(period_done))
         
-        # ШАГ 4: Номер недели из date_raw
+        # ШАГ 4: Номер недели
         if 'date_raw' in df.columns:
-            # Используем явно pyspark.sql.functions.regexp_extract
-            df = df.withColumn('week_num_str', 
-                regexp_extract(col('date_raw'), r'(\d+)\.\d+', 1))
             df = df.withColumn('week_num', 
-                df['week_num_str'].cast('int'))
-            df = df.drop('date_raw', 'week_num_str')
+                F.regexp_extract(df['date_raw'], r'(\d+)\.\d+', 1).cast('int'))
+            df = df.drop('date_raw')
         
         # ШАГ 5: Регион + город
         if 'city_raw' in df.columns:
-            df = df.withColumn('region_name', col('city_raw'))
+            df = df.withColumn('region_name', df['city_raw'])
             df = df.drop('city_raw')
         
         if 'address' in df.columns:
             df = df.withColumn('city_name',
-                coalesce(
-                    regexp_extract(col('address'), r'г\.\s*([^,]+)', 1),
-                    regexp_extract(col('address'), r'г\s+([^,]+)', 1)
+                F.coalesce(
+                    F.regexp_extract(df['address'], r'г\.\s*([^,]+)', 1),
+                    F.regexp_extract(df['address'], r'г\s+([^,]+)', 1)
                 )
             )
-            df = df.withColumn('city_name',
-                coalesce(col('city_name'), col('region_name'))
-            )
+            df = df.withColumn('city_name', F.coalesce(df['city_name'], df['region_name']))
         
         # ШАГ 6: Запятые → точки
         for col_name in ['average_sell_price', 'average_cost_price', 'margin_rub',
                          'write_off_rub', 'loss_rub', 'promo_sales_rub', 'sales_kg']:
             if col_name in df.columns:
-                df = df.withColumn(col_name, 
-                    regexp_replace(col(col_name).cast('string'), ',', '.')
-                )
+                df = df.withColumn(col_name, F.regexp_replace(df[col_name].cast('string'), ',', '.'))
         
-        # ШАГ 7: Расчёт общих сумм
+        # ШАГ 7: Общие суммы
         if 'average_sell_price' in df.columns and 'sales_quantity' in df.columns:
             df = df.withColumn('sales_amount_rub',
-                when(col('sales_quantity').isNotNull() & (col('sales_quantity') > 0),
-                     col('average_sell_price').cast('double') * col('sales_quantity').cast('double'))
-            )
+                F.when(df['sales_quantity'].isNotNull() & (df['sales_quantity'] > 0),
+                     df['average_sell_price'] * df['sales_quantity']))
         
         if 'average_cost_price' in df.columns and 'sales_quantity' in df.columns:
             df = df.withColumn('sales_cost_price',
-                when(col('sales_quantity').isNotNull() & (col('sales_quantity') > 0),
-                     col('average_cost_price').cast('double') * col('sales_quantity').cast('double'))
-            )
+                F.when(df['sales_quantity'].isNotNull() & (df['sales_quantity'] > 0),
+                     df['average_cost_price'] * df['sales_quantity']))
         
         if 'sales_amount_rub_extra' in df.columns:
             df = df.drop('sales_amount_rub_extra')
         
-        # ШАГ 8: Добавить недостающие колонки
+        # ШАГ 8: Недостающие колонки
         remaining = set(SILVER_COLUMNS) - set(df.columns)
-        if remaining:
-            print(f'NULL колонки: {remaining}')
         for col in remaining:
-            df = df.withColumn(col, lit(None))
+            df = df.withColumn(col, F.lit(None))
         
-        # ШАГ 9: Приведение типов (один раз!)
+        # ШАГ 9: Типы
         for col_name in df.columns:
             dtype_str = SILVER_TYPES.get(col_name)
             if dtype_str:
                 try:
-                    df = df.withColumn(col_name, col(col_name).cast(dtype_str))
+                    df = df.withColumn(col_name, df[col_name].cast(dtype_str))
                 except Exception as e:
-                    print(f"  ⚠ {col_name} → {dtype_str}: {e}")
+                    print(f"  ⚠ {col_name}: {e}")
         
         print(f'Финальные колонки: {df.columns}')
         print('=' * 100)
         
-        # ШАГ 10: Финальный датафрейм
+        # ШАГ 10: Запись
         final_df = df.select(*SILVER_COLUMNS)
         
-        # ШАГ 11: Запись
         try:
-            res = spark.sql(f'''
-                SELECT COUNT(*) FROM iceberg.aushan_silver.sales 
-                WHERE file_name = '{file[:-5]}'
-            ''').first()
+            res = spark.sql(f"SELECT COUNT(*) FROM iceberg.aushan_silver.sales WHERE file_name = '{file[:-4]}'").first()
             file_exists = res[0] > 0
         except:
             file_exists = False
@@ -323,13 +196,10 @@ else:
         if not file_exists:
             rows = final_df.count()
             print(f'Записываем {rows} строк...')
-            final_df.writeTo('iceberg.aushan_silver.sales') \
-                .partitionedBy('retail_chain', 'year', 'month') \
-                .append()
+            final_df.writeTo('iceberg.aushan_silver.sales').partitionedBy('retail_chain', 'year', 'month').append()
             print(f'✓ {file} → {rows} строк')
         else:
-            print(f'⊘ {file} уже в таблице')
-        
+            print(f'⊘ {file} уже есть')
         print('=' * 100)
         print()
 

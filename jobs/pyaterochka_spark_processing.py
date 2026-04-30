@@ -2,62 +2,14 @@ import boto3
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
 from datetime import datetime
-import requests
 import re as re_m
 
 spark = SparkSession.builder.appName('Iceberg Pyaterochka ETL').getOrCreate()
 print(f"✓ Spark: {spark.version}")
 
-def cleanup():
-    BASE = "http://iceberg-rest:8181/v1"
-    try: requests.delete(f"{BASE}/namespaces/pyaterochka_silver/tables/sales?purgeRequested=true")
-    except: pass
-    try:
-        s3 = boto3.client('s3', endpoint_url='http://minio:9000', aws_access_key_id='minioadmin', aws_secret_access_key='minioadmin')
-        ct = None
-        while True:
-            kw = {'Bucket': 'warehouse', 'Prefix': 'pyaterochka_silver/'}
-            if ct: kw['ContinuationToken'] = ct
-            objs = s3.list_objects_v2(**kw)
-            if 'Contents' in objs:
-                for o in objs['Contents']: s3.delete_object(Bucket='warehouse', Key=o['Key'])
-            if not objs.get('IsTruncated'): break
-            ct = objs.get('NextContinuationToken')
-    except: pass
-
-try:
-    spark.sql('CREATE NAMESPACE IF NOT EXISTS iceberg.pyaterochka_silver')
-    spark.sql('''
-        CREATE TABLE IF NOT EXISTS iceberg.pyaterochka_silver.sales (
-            year INT, month STRING, retail_chain STRING,
-            product_category_3 STRING, base_type STRING, product_category_4 STRING,
-            vendor STRING, brand STRING, product_name STRING, product_uni_name STRING,
-            weight_grams STRING, flavor STRING,
-            sales_quantity INT, sales_amount_rub FLOAT, sales_cost_price FLOAT, sales_tons FLOAT,
-            average_cost_price FLOAT, average_sell_price FLOAT,
-            file_name STRING, created_at DATE, updated_at DATE, period DATE
-        ) USING iceberg PARTITIONED BY (retail_chain, year, month)
-        LOCATION 's3://warehouse/pyaterochka_silver/sales'
-    ''')
-    print("✓ Таблица готова\n")
-except Exception as e:
-    print(f"⚠ {e}")
-    cleanup()
-    spark.sql('CREATE NAMESPACE IF NOT EXISTS iceberg.pyaterochka_silver')
-    spark.sql('''
-        CREATE TABLE iceberg.pyaterochka_silver.sales (
-            year INT, month STRING, retail_chain STRING,
-            product_category_3 STRING, base_type STRING, product_category_4 STRING,
-            vendor STRING, brand STRING, product_name STRING, product_uni_name STRING,
-            weight_grams STRING, flavor STRING,
-            sales_quantity INT, sales_amount_rub FLOAT, sales_cost_price FLOAT, sales_tons FLOAT,
-            average_cost_price FLOAT, average_sell_price FLOAT,
-            file_name STRING, created_at DATE, updated_at DATE, period DATE
-        ) USING iceberg PARTITIONED BY (retail_chain, year, month)
-        LOCATION 's3://warehouse/pyaterochka_silver/sales'
-    ''')
-    print("✓ Таблица создана\n")
-
+# ============================================================
+# КОНСТАНТЫ
+# ============================================================
 SILVER_COLUMNS = [
     'year', 'month', 'retail_chain',
     'product_category_3', 'base_type', 'product_category_4',
@@ -166,7 +118,7 @@ else:
         period_done = datetime.strptime(f'{parsed_year}-{month_int}-01', '%Y-%m-%d')
         df = df.withColumn('period', F.lit(period_done))
         
-        # ШАГ 4: Категория 4 из base_type
+        # ШАГ 4: product_category_4 из base_type
         if 'base_type' in df.columns:
             df = df.withColumn('product_category_4', df['base_type'])
         
@@ -177,7 +129,7 @@ else:
                     df = df.withColumn(col_name, F.regexp_replace(df[col_name].cast('string'), ',', '.'))
                 except: pass
         
-        # ШАГ 6: average_*
+        # ШАГ 6: Средние цены
         if 'sales_quantity' in df.columns and 'sales_cost_price' in df.columns:
             df = df.withColumn('average_cost_price',
                 F.when(df['sales_quantity'].isNotNull() & (df['sales_quantity'] > 0),
@@ -200,7 +152,7 @@ else:
                 try:
                     df = df.withColumn(col_name, df[col_name].cast(dtype_str))
                 except Exception as e:
-                    print(f"  ⚠ {col_name} → {dtype_str}: {e}")
+                    print(f"  ⚠ {col_name}: {e}")
         
         print(f'Финальные колонки: {df.columns}')
         print('=' * 100)

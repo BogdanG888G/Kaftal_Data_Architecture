@@ -25,7 +25,7 @@ def pipeline():
     
     wait_for_files = FileSensor(task_id='wait_for_files', fs_conn_id='folder_connect',
         filepath='/opt/airflow/data/vernyi*', mode='reschedule', poke_interval=30,
-        timeout=3600, soft_fail=True, retries=0, on_failure_callback=telegram_alert)
+        timeout=60, soft_fail=True, retries=0, on_failure_callback=telegram_alert)
 
     @task(on_failure_callback=telegram_alert, trigger_rule=TriggerRule.ALL_SUCCESS, retries=2, retry_delay=datetime.timedelta(minutes=1))
     def load_to_s3_raw():
