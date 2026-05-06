@@ -207,7 +207,6 @@ else:
             )
         )
         
-        final_df = final_df.filter(df['average_cost_price'] > 0).filter(df['average_sell_price'] > 0)
         
         # ШАГ 10: Запись
         try:

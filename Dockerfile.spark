@@ -1,0 +1,23 @@
+FROM apache/spark:3.5.1-scala2.12-java17-python3-ubuntu
+
+USER root
+
+# Установка Python 3.12 (без репозитория)
+RUN apt-get update && \
+    apt-get install -y wget gcc libssl-dev libbz2-dev libffi-dev zlib1g-dev && \
+    wget https://www.python.org/ftp/python/3.12.0/Python-3.12.0.tgz && \
+    tar xzf Python-3.12.0.tgz && \
+    cd Python-3.12.0 && \
+    ./configure --enable-optimizations && \
+    make -j$(nproc) && \
+    make altinstall && \
+    cd .. && rm -rf Python-3.12.0* && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.12 1
+
+# Установка pip для Python 3.12
+RUN wget https://bootstrap.pypa.io/get-pip.py && python3.12 get-pip.py
+
+# Установка clickhouse_connect
+RUN pip3.12 install clickhouse_connect
+
+USER spark

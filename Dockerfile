@@ -24,7 +24,6 @@ RUN mkdir -p /home/airflow/.ivy2/cache /home/airflow/.ivy2/jars && \
     chown -R airflow:root /home/airflow/.ivy2 && \
     chmod -R 775 /home/airflow/.ivy2
 
-
 ENV SPARK_JARS_DIR=/opt/spark/jars
 
 USER airflow
@@ -39,4 +38,7 @@ RUN pip install --upgrade pip && \
     boto3 \
     pyarrow \
     dbt-core \
-    dbt-trino
+    dbt-trino \
+    clickhouse-connect \
+    pandas \
+    openpyxl
