@@ -2,6 +2,12 @@
 
 `ssh -l bogdangor 213.165.222.200`
 
+Перенос файлов:
+
+1) Перейти в нужную папку
+2) Выполнить команду:
+`scp -i ~/.ssh/id_ed25519 <имя_файла> bogdangor@213.165.222.200:~/Kaftal_Data_Architecture/data/`
+
 # Конфиги к подключению БД к BI
 
 Clickhouse: `clickhousedb://admin:123@clickhouse:8123/default`

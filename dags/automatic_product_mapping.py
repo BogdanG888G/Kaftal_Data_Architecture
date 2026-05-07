@@ -59,8 +59,10 @@ def pipeline():
             'spark.hadoop.fs.s3a.path.style.access': 'true',
             'spark.hadoop.fs.s3a.impl': 'org.apache.hadoop.fs.s3a.S3AFileSystem',
             'spark.hadoop.fs.s3a.region': 'us-east-1',                   
-            'spark.pyspark.python': 'python3.10',
-            'spark.pyspark.driver.python': 'python3.10',
+            "spark.pyspark.python": "python3",
+            "spark.pyspark.driver.python": "python3",
+            "spark.executorEnv.PYSPARK_PYTHON": "python3",
+            "spark.executorEnv.PYSPARK_DRIVER_PYTHON": "python3",
         }
     )
     
