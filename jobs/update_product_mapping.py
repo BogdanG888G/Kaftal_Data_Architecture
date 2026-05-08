@@ -1,5 +1,5 @@
 """
-Обновление справочника товаров — только ЧИПСЫ
+Обновление справочника товаров
 """
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
@@ -28,7 +28,7 @@ for table in tables:
         df = spark.sql(f"""
             SELECT DISTINCT product_name 
             FROM {table} 
-            WHERE lower(product_name) LIKE '%чипсы%' OR lower(product_name) LIKE '%картоф%'
+            WHERE lower(product_name) LIKE '%чипс%' OR lower(product_name) LIKE '%карто%'
         """)
         if all_products is None:
             all_products = df
