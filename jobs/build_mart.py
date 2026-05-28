@@ -1,5 +1,5 @@
 """
-Сборка единой витрины из 8 сетей + LEFT JOIN со справочником товаров
+Сборка единой витрины из 10 сетей + LEFT JOIN со справочником товаров
 Параллельная распределенная запись в ClickHouse напрямую с экзекуторов
 Фильтрация: Только чипсы (исключаем товары с brand_manual = 'Не чипсы')
 """
@@ -24,7 +24,7 @@ spark = (
 print(f"✓ Spark: {spark.version}")
 
 # ============================================================
-# Функции унификации (без изменений)
+# Функции унификации
 # ============================================================
 def select_x5(df):
     return df.select(
@@ -381,6 +381,96 @@ def select_vernyi(df):
         F.col('period').cast('string').alias('date'),
     )
 
+def select_bristol(df):
+    """Унификация данных из Бристоль"""
+    return df.select(
+        F.col('year').cast('int').alias('year'),
+        F.col('month').alias('month'),
+        F.col('retail_chain').alias('retail_chain'),
+        F.lit('').alias('region_name'),
+        F.lit('').alias('city_name'),
+        F.lit('').alias('address'),
+        F.lit('').alias('store_code'),
+        F.lit('').alias('store_name'),
+        F.lit('').alias('store_format'),
+        F.lit('').alias('product_category_2'),
+        F.col('product_category').alias('product_category_3'),
+        F.lit('').alias('product_category_4'),
+        F.lit('').alias('product_category_5'),
+        F.lit('').alias('product_id'),
+        F.col('product_name').alias('product_name_search'),
+        F.lit(None).cast('string').alias('product_uni_name'),
+        F.lit('').alias('brand'),
+        F.lit('').alias('vendor'),
+        F.lit('').alias('flavor'),
+        F.lit('').alias('weight_grams'),
+        F.lit('').alias('barcode'),
+        F.lit('').alias('manufacturer'),
+        F.col('sales_quantity').cast('int').alias('sales_quantity'),
+        F.col('revenue_rub').alias('sales_amount_rub'),
+        F.col('cost_price_rub').alias('sales_cost_price'),
+        F.lit(None).cast('double').alias('sales_kg'),
+        F.lit(None).cast('double').alias('sales_tons'),
+        F.col('average_cost_price').alias('average_cost_price'),
+        F.col('average_sell_price').alias('average_sell_price'),
+        F.lit(None).cast('double').alias('margin_rub'),
+        F.lit(None).cast('double').alias('margin_pct'),
+        F.lit(None).cast('double').alias('cost_price_rub'),
+        F.lit(None).cast('double').alias('max_sell_price'),
+        F.lit(None).cast('double').alias('max_cost_price'),
+        F.lit(None).cast('int').alias('stock_qty'),
+        F.lit(None).cast('double').alias('stock_rub'),
+        F.lit(None).cast('double').alias('promo_sales_rub'),
+        F.lit(None).cast('int').alias('week_num'),
+        F.col('file_name').alias('file_name'),
+        F.col('period').cast('string').alias('date'),
+    )
+
+def select_redwhite(df):
+    """Унификация данных из Красное и Белое"""
+    return df.select(
+        F.col('year').cast('int').alias('year'),
+        F.col('month').alias('month'),
+        F.col('retail_chain').alias('retail_chain'),
+        F.lit('').alias('region_name'),
+        F.lit('').alias('city_name'),
+        F.lit('').alias('address'),
+        F.lit('').alias('store_code'),
+        F.lit('').alias('store_name'),
+        F.lit('').alias('store_format'),
+        F.lit('').alias('product_category_2'),
+        F.lit('').alias('product_category_3'),
+        F.lit('').alias('product_category_4'),
+        F.lit('').alias('product_category_5'),
+        F.lit('').alias('product_id'),
+        F.col('product_name').alias('product_name_search'),
+        F.lit(None).cast('string').alias('product_uni_name'),
+        F.lit('').alias('brand'),
+        F.lit('').alias('vendor'),
+        F.lit('').alias('flavor'),
+        F.lit('').alias('weight_grams'),
+        F.lit('').alias('barcode'),
+        F.lit('').alias('manufacturer'),
+        F.col('quantity_shipped').cast('int').alias('sales_quantity'),
+        F.col('revenue_rub').cast('double').alias('sales_amount_rub'),
+        F.lit(None).cast('double').alias('sales_cost_price'),
+        F.lit(None).cast('double').alias('sales_kg'),
+        F.lit(None).cast('double').alias('sales_tons'),
+        F.lit(None).cast('double').alias('average_cost_price'),
+        F.lit(None).cast('double').alias('average_sell_price'),
+        F.col('markup_rub').cast('double').alias('margin_rub'),
+        F.col('profitability_percent').cast('double').alias('margin_pct'),
+        F.lit(None).cast('double').alias('cost_price_rub'),
+        F.lit(None).cast('double').alias('max_sell_price'),
+        F.lit(None).cast('double').alias('max_cost_price'),
+        F.lit(None).cast('int').alias('stock_qty'),
+        F.lit(None).cast('double').alias('stock_rub'),
+        F.lit(None).cast('double').alias('promo_sales_rub'),
+        F.lit(None).cast('int').alias('week_num'),
+        F.col('file_name').alias('file_name'),
+        F.col('period').cast('string').alias('date'),
+    )
+
 # ============================================================
 # Свойства метаданных ClickHouse
 # ============================================================
@@ -499,6 +589,8 @@ try:
         'perekrestok': ('iceberg.perekrestok_silver.sales', select_perekrestok),
         'pyaterochka': ('iceberg.pyaterochka_silver.sales', select_pyaterochka),
         'vernyi':      ('iceberg.vernyi_silver.sales',      select_vernyi),
+        'bristol':     ('iceberg.bristol_silver.sales',     select_bristol),
+        'redwhite':    ('iceberg.redwhite_silver.sales',    select_redwhite),
     }
 
     dfs = []
@@ -604,17 +696,11 @@ try:
         # ==========================================================
         print("\nПрименяем фильтрацию: оставляем только чипсы...")
         
-        # Вариант 1: Оставляем только те записи, где brand_manual НЕ РАВЕН 'Не чипсы'
+        # Оставляем только те записи, где brand_manual НЕ РАВЕН 'Не чипсы'
         # (включая NULL и другие значения)
         all_data = all_data.filter(
             (F.col('brand_manual') != 'Не чипсы') | (F.col('brand_manual').isNull())
         )
-        
-        # Альтернативный вариант (раскомментировать при необходимости):
-        # Оставляем только записи с конкретными типами чипсов
-        # all_data = all_data.filter(
-        #     F.col('brand_manual').isin('Картофельные чипсы', 'Кукурузные чипсы', 'Чипсы из других овощей')
-        # )
         
         # Удаляем вспомогательные колонки справочника
         all_data = all_data.drop(
@@ -631,10 +717,7 @@ try:
         # Выравниваем порядок колонок
         all_data = all_data.select(*ch_columns)
         
-        # Выводим статистику после фильтрации
-        row_count_before = all_data.count()  # Это действие вызовет вычисление, будьте осторожны с большими данными
-        # Для production лучше использовать агрегацию без полного сбора данных
-        print(f"✓ После фильтрации осталось записей: {row_count_before:,}")
+        # Выводим статистику
         print("✓ Обогащение и фильтрация выполнены")
 
         # ----------------------------------------------------------
