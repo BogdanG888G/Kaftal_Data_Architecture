@@ -1,7 +1,7 @@
 """
 Сборка единой витрины из 8 сетей + LEFT JOIN со справочником товаров
 Параллельная распределенная запись в ClickHouse напрямую с экзекуторов
-Фильтрация: Только чипсы (картофельные, кукурузные и т.д.)
+Фильтрация: Только чипсы (исключаем товары с brand_manual = 'Не чипсы')
 """
 
 from pyspark.sql import SparkSession
@@ -24,7 +24,7 @@ spark = (
 print(f"✓ Spark: {spark.version}")
 
 # ============================================================
-# Функции унификации
+# Функции унификации (без изменений)
 # ============================================================
 def select_x5(df):
     return df.select(
@@ -283,7 +283,7 @@ def select_perekrestok(df):
         F.lit(None).cast('double').alias('margin_pct'),
         F.lit(None).cast('double').alias('cost_price_rub'),
         F.lit(None).cast('double').alias('max_sell_price'),
-        F.lit(None).cast('double').alias('max_cost_price'),  # Исправлено: Передаем Null, так как колонки нет
+        F.lit(None).cast('double').alias('max_cost_price'),
         F.lit(None).cast('int').alias('stock_qty'),
         F.lit(None).cast('double').alias('stock_rub'),
         F.lit(None).cast('double').alias('promo_sales_rub'),
@@ -397,7 +397,6 @@ def insert_partition_to_clickhouse(iterator):
     import math
     from datetime import date, datetime
 
-    # Вспомогательные функции сериализуются внутри экзекутора
     def normalize_type(ch_type: str):
         nullable = False
         t = ch_type
@@ -422,7 +421,6 @@ def insert_partition_to_clickhouse(iterator):
         ):
             value = None
 
-        # Защита от NULL в не-nullable полях ClickHouse
         if value is None:
             if nullable:
                 return None
@@ -456,11 +454,9 @@ def insert_partition_to_clickhouse(iterator):
         except Exception as e:
             raise ValueError(f'Cast error `{col_name}` to `{ch_type}`: {value!r}') from e
 
-    # Получаем структуру и типы колонок ClickHouse из broadcast-переменных
     cols = ch_columns_b.value
     types = ch_types_b.value
 
-    # Создаем соединение с Clickhouse непосредственно с экзекутора
     client = clickhouse_connect.get_client(
         host='clickhouse',
         port=8123,
@@ -527,7 +523,7 @@ try:
         print("\n✓ UNION готов")
 
         # ----------------------------------------------------------
-        # 2. Получение схемы из ClickHouse на Драйвере
+        # 2. Получение справочника из ClickHouse
         # ----------------------------------------------------------
         client = get_ch_client()
 
@@ -549,13 +545,15 @@ try:
                 .drop_duplicates(subset=['original_name'], keep='last')
             )
 
-        print(f"✓ Справочник: {len(mapping_pd)} записей")
+        print(f"✓ Справочник загружен: {len(mapping_pd)} записей")
 
+        # Получаем схему целевой таблицы
         desc_rows  = client.query("DESCRIBE TABLE default.sales_mart").result_rows
         ch_columns = [row[0] for row in desc_rows]
         ch_types   = {row[0]: row[1] for row in desc_rows}
         client.close()
 
+        # Создаем Spark DataFrame из справочника
         if len(mapping_pd) > 0:
             mapping = spark.createDataFrame(mapping_pd)
         else:
@@ -567,14 +565,18 @@ try:
             )
 
         # ----------------------------------------------------------
-        # 3. LEFT JOIN + Обогащение
+        # 3. LEFT JOIN + Обогащение + ФИЛЬТРАЦИЯ ЧИПСОВ
         # ----------------------------------------------------------
+        print("\nВыполняем LEFT JOIN с обогащением...")
+        
+        # LEFT JOIN со справочником
         all_data = all_data.join(
             F.broadcast(mapping),
             all_data['product_name_search'] == mapping['original_name'],
             'left'
         )
-
+        
+        # Обогащаем поля данными из справочника
         all_data = (
             all_data
             .withColumn('brand',
@@ -595,27 +597,45 @@ try:
                  .otherwise(F.col('product_name_search')))
             .withColumn('created_at', F.current_date())
         )
-
-        # ----------------------------------------------------------
-        # ИЗМЕНЕНИЕ: ФИЛЬТРАЦИЯ ТОЛЬКО ЧИПСОВ
-        # ----------------------------------------------------------
-
+        
+        # ==========================================================
+        # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: ФИЛЬТРАЦИЯ ТОЛЬКО ЧИПСОВ
+        # Исключаем все товары, у которых brand_manual = 'Не чипсы'
+        # ==========================================================
+        print("\nПрименяем фильтрацию: оставляем только чипсы...")
+        
+        # Вариант 1: Оставляем только те записи, где brand_manual НЕ РАВЕН 'Не чипсы'
+        # (включая NULL и другие значения)
+        all_data = all_data.filter(
+            (F.col('brand_manual') != 'Не чипсы') | (F.col('brand_manual').isNull())
+        )
+        
+        # Альтернативный вариант (раскомментировать при необходимости):
+        # Оставляем только записи с конкретными типами чипсов
+        # all_data = all_data.filter(
+        #     F.col('brand_manual').isin('Картофельные чипсы', 'Кукурузные чипсы', 'Чипсы из других овощей')
+        # )
+        
+        # Удаляем вспомогательные колонки справочника
         all_data = all_data.drop(
             'brand_manual', 'chip_type_manual', 'package_manual',
             'flavor_manual', 'weight_manual', 'original_name',
             'product_name_search', 'product_uni_name'
         )
-
-        # Добавляем недостающие в датафрейме CH колонки
+        
+        # Добавляем недостающие колонки (если есть)
         for col_name in ch_columns:
             if col_name not in all_data.columns:
                 all_data = all_data.withColumn(col_name, F.lit(None))
-
+        
         # Выравниваем порядок колонок
         all_data = all_data.select(*ch_columns)
-
-        print("✓ JOIN, обогащение и фильтрация чипсов выполнены")
-        print(f"✓ Колонки: {ch_columns}")
+        
+        # Выводим статистику после фильтрации
+        row_count_before = all_data.count()  # Это действие вызовет вычисление, будьте осторожны с большими данными
+        # Для production лучше использовать агрегацию без полного сбора данных
+        print(f"✓ После фильтрации осталось записей: {row_count_before:,}")
+        print("✓ Обогащение и фильтрация выполнены")
 
         # ----------------------------------------------------------
         # 4. Очищаем целевую таблицу ClickHouse перед записью
@@ -633,29 +653,27 @@ try:
         ch_types_b = spark.sparkContext.broadcast(ch_types)
 
         # ----------------------------------------------------------
-        # 6. Распределенная запись в ClickHouse (foreachPartition)
+        # 6. Распределенная запись в ClickHouse
         # ----------------------------------------------------------
-        print("\nЗаписываем данные в ClickHouse из экзекуторов в 4 параллельных потока...")
+        print("\nЗаписываем данные в ClickHouse...")
         start_time = time.time()
         
-        # repartition вместо coalesce равномерно балансирует объем партиций,
-        # исключая Data Skew и падение экзекуторов по OOM
         all_data.repartition(4).foreachPartition(insert_partition_to_clickhouse)
         
         elapsed = time.time() - start_time
         print(f"✓ Запись завершена за {elapsed:.2f}с")
 
         # ----------------------------------------------------------
-        # 7. Контрольная проверка результатов на Драйвере
+        # 7. Контрольная проверка
         # ----------------------------------------------------------
         client = get_ch_client()
         final_count = client.query('SELECT count() FROM default.sales_mart').result_set[0][0]
         client.close()
 
         print(f"\n✅ Витрина успешно обновлена!")
-        print(f"   Записано в ClickHouse: {final_count:,} строк чипсов")
+        print(f"   Записано в ClickHouse: {final_count:,} строк")
         print(f"   Общее время работы:    {elapsed:.1f}с")
-        if elapsed > 0:
+        if elapsed > 0 and final_count > 0:
             print(f"   Средняя скорость:      {final_count / elapsed:.0f} стр/сек")
 
 except Exception as e:

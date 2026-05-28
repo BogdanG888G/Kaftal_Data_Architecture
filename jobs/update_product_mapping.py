@@ -27,8 +27,7 @@ for table in tables:
     try:
         df = spark.sql(f"""
             SELECT DISTINCT product_name 
-            FROM {table} 
-            WHERE lower(product_name) LIKE '%чипс%' OR lower(product_name) LIKE '%карто%'
+            FROM {table}
         """)
         if all_products is None:
             all_products = df

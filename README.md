@@ -5,8 +5,14 @@
 Перенос файлов:
 
 1) Перейти в нужную папку
+
 2) Выполнить команду:
+
 `scp -i ~/.ssh/id_ed25519 <имя_файла> bogdangor@213.165.222.200:~/Kaftal_Data_Architecture/data/`
+
+3) Скопировать все файлы из папки:
+
+`scp -i ~/.ssh/id_ed25519 * bogdangor@213.165.222.200:~/Kaftal_Data_Architecture/data/`
 
 # Конфиги к подключению БД к BI
 
@@ -119,20 +125,20 @@ Postgres: `postgresql://airflow:airflow@postgres:5432/airflow`
 
 # TODO: 
 
-1. ⬜ Superset (дашборды)
+1. Грамотнее справочники/разметку сделать + добавить категории вкуса (сметана и лук, и т.д)
 
-2. ⬜ Мониторинг и алерты (Telegram)
+2. Superset (дашборды)
 
-3. ⬜ Data Quality (dbt tests)
+3. Мониторинг и алерты (Telegram)
 
-4. ⬜ Incremental Load
+4. Data Quality (dbt tests). Настроить более корректно обновление
 
-5. ⬜ Soda / Great Expectations
+5. Incremental Load
 
-6. ⬜ GitHub Actions (CI/CD для dbt)
+6. Soda / Great Expectations
 
-7. ⬜ Grafana + Prometheus
+7. GitHub Actions (CI/CD для dbt)
 
-8. ⬜ DataHub
+8. Grafana + Prometheus
 
-9. ⬜ Data Vault / Anchor Modeling
+9. Data Vault / Anchor Modeling
