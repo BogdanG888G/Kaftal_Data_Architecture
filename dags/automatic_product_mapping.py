@@ -4,15 +4,64 @@ from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOpe
 import datetime
 import requests
 
-TG_TOKEN = Variable.get('TELEGRAM_TOKEN')
-TG_CHAT_ID = Variable.get('TELEGRAM_CHAT_ID')
+
+def get_tg_credentials():
+    """Получаем credentials только в момент вызова"""
+    token = Variable.get('TELEGRAM_TOKEN')
+    chat_id = Variable.get('TELEGRAM_CHAT_ID')
+    return token, chat_id
+
 
 def telegram_alert(context):
-    m = f'❌ Ошибка в справочнике\n<b>{context["exception"]}</b>'
-    requests.post(url=f'https://api.telegram.org/bot{TG_TOKEN}/sendMessage', data={'chat_id': TG_CHAT_ID, 'text': m, 'parse_mode': 'HTML'})
+    """Вызывается при ошибке задачи"""
+    token, chat_id = get_tg_credentials()
+    
+    task_id = context.get('task_instance').task_id
+    dag_id = context.get('dag').dag_id
+    exception = context.get('exception')
+    
+    message = (
+        f'❌ <b>Ошибка в справочнике</b>\n'
+        f'DAG: <code>{dag_id}</code>\n'
+        f'Task: <code>{task_id}</code>\n'
+        f'Ошибка: <b>{exception}</b>'
+    )
+    
+    try:
+        requests.post(
+            url=f'https://api.telegram.org/bot{token}/sendMessage',
+            data={
+                'chat_id': chat_id,
+                'text': message,
+                'parse_mode': 'HTML'
+            },
+            timeout=10
+        )
+    except Exception as e:
+        print(f'Не удалось отправить сообщение в Telegram: {e}')
 
-def telegram_success():
-    requests.post(url=f'https://api.telegram.org/bot{TG_TOKEN}/sendMessage', data={'chat_id': TG_CHAT_ID, 'text': '✅ Справочник товаров обновлён', 'parse_mode': 'HTML'})
+
+def telegram_success(context):  # ← context обязателен!
+    """Вызывается при успехе DAG"""
+    token, chat_id = get_tg_credentials()
+    
+    dag_id = context.get('dag').dag_id
+    
+    message = f'✅ Справочник товаров обновлён\nDAG: <code>{dag_id}</code>'
+    
+    try:
+        requests.post(
+            url=f'https://api.telegram.org/bot{token}/sendMessage',
+            data={
+                'chat_id': chat_id,
+                'text': message,
+                'parse_mode': 'HTML'
+            },
+            timeout=10
+        )
+    except Exception as e:
+        print(f'Не удалось отправить сообщение в Telegram: {e}')
+
 
 @dag(
     dag_id='update_product_mapping',
@@ -23,8 +72,8 @@ def telegram_success():
     tags=['mapping', 'clickhouse'],
     on_success_callback=telegram_success
 )
-def pipeline():
-    
+
+def pipeline():    
     update_mapping = SparkSubmitOperator(
         task_id='update_mapping',
         conn_id='spark_connection',
