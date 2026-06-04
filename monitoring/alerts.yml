@@ -1,0 +1,66 @@
+groups:
+  - name: disk_alerts
+    rules:
+      # Диск заполнен > 80%
+      - alert: DiskSpaceCritical
+        expr: |
+          (1 - node_filesystem_avail_bytes{mountpoint="/"} 
+          / node_filesystem_size_bytes{mountpoint="/"}) * 100 > 80
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Диск заполнен на {{ $value | printf \"%.1f\" }}%"
+          description: "Свободного места менее 20%. База может встать!"
+
+      # Диск заполнен > 60% — предупреждение
+      - alert: DiskSpaceWarning
+        expr: |
+          (1 - node_filesystem_avail_bytes{mountpoint="/"} 
+          / node_filesystem_size_bytes{mountpoint="/"}) * 100 > 60
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Диск заполнен на {{ $value | printf \"%.1f\" }}%"
+
+      # ClickHouse volume растёт слишком быстро
+      - alert: ClickHouseDataGrowth
+        expr: |
+          predict_linear(
+            node_filesystem_avail_bytes{mountpoint="/"}[6h], 
+            24*3600
+          ) < 0
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "При текущей скорости роста диск закончится за 24 часа"
+
+  - name: clickhouse_alerts
+    rules:
+      - alert: ClickHouseDown
+        expr: up{job="clickhouse"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ClickHouse недоступен!"
+
+      - alert: ClickHouseTooManyConnections
+        expr: ClickHouseMetrics_TCPConnection > 100
+        for: 5m
+        labels:
+          severity: warning
+
+  - name: container_alerts
+    rules:
+      - alert: ContainerHighMemory
+        expr: |
+          container_memory_usage_bytes{name=~".+"} 
+          / container_spec_memory_limit_bytes{name=~".+"} * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Контейнер {{ $labels.name }} использует >85% RAM"

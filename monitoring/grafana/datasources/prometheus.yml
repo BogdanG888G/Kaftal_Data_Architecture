@@ -7,3 +7,16 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     editable: true
+
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    access: proxy
+    jsonData:
+      host: clickhouse
+      port: 8123
+      defaultDatabase: system
+      username: admin
+    secureJsonData:
+      password: "123"
+    editable: true
+  

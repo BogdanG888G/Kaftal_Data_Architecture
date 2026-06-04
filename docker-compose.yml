@@ -62,11 +62,13 @@ services:
       - "9000:9000"  # API (для boto3)
       - "9001:9001"  # UI (веб-интерфейс)
     environment:
-      MINIO_ROOT_USER: minioadmin      # логин
-      MINIO_ROOT_PASSWORD: minioadmin  # пароль (минимум 8 символов)
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
     command: server /data --console-address ":9001"
     volumes:
-      - minio-data:/data  # данные сохраняются в volume
+      - minio-data:/data
+    networks:
+      - default
 
   spark-master:
     image: apache/spark:3.5.1-scala2.12-java17-python3-ubuntu
@@ -111,7 +113,7 @@ services:
     ports:
       - "8181:8181"
     environment:
-      CATALOG_WAREHOUSE: s3://warehouse/    # бакет, а котором будет Lakehouse
+      CATALOG_WAREHOUSE: s3://warehouse/
       CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
       CATALOG_S3_ENDPOINT: http://minio:9000
       CATALOG_S3_PATH__STYLE__ACCESS: "true"
@@ -153,15 +155,16 @@ services:
     ports:
       - "8123:8123"
       - "9009:9000"
+      - "9363:9363"
     volumes:
       - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/config.d:/etc/clickhouse-server/config.d
     environment:
       - CLICKHOUSE_USER=admin
       - CLICKHOUSE_PASSWORD=123
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     networks:
       - default
-
 
   trino:
     image: trinodb/trino:435
@@ -229,6 +232,8 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-piechart-panel
+      - GF_SERVER_ROOT_URL=http://213.165.222.200:3000
+      - GF_SERVER_DOMAIN=213.165.222.200
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
@@ -238,7 +243,58 @@ services:
     networks:
       - default
     restart: unless-stopped
-  
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    ports:
+      - "8083:8080"
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+      - /cgroup:/cgroup:ro
+    networks:
+      - default
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    pid: host
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - default
+    restart: unless-stopped
+
+  clickhouse-exporter:
+    image: f1yegor/clickhouse-exporter:latest
+    container_name: clickhouse-exporter
+    ports:
+      - "9116:9116"
+    command:
+      - '-scrape_uri=http://admin:123@clickhouse:8123/'
+    depends_on:
+      - clickhouse
+    networks:
+      - default
+    restart: unless-stopped
+
 
 volumes:
   postgres-db-volume:
@@ -248,4 +304,3 @@ volumes:
   clickhouse-data:
   prometheus-data:
   grafana-data:
-  
