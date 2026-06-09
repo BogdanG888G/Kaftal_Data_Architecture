@@ -155,10 +155,8 @@ services:
     ports:
       - "8123:8123"
       - "9009:9000"
-      - "9363:9363"
     volumes:
       - clickhouse-data:/var/lib/clickhouse
-      - ./clickhouse/config.d:/etc/clickhouse-server/config.d
     environment:
       - CLICKHOUSE_USER=admin
       - CLICKHOUSE_PASSWORD=123
