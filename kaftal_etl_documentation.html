@@ -1,0 +1,3468 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kaftal · ETL Pipeline Documentation</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0d0f14;
+    --surface:   #13161e;
+    --border:    #1e2230;
+    --muted:     #2a2f42;
+    --text:      #e2e6f0;
+    --subtle:    #7a82a0;
+    --bronze:    #c87941;
+    --bronze-bg: #1e1510;
+    --silver:    #8ab4d4;
+    --silver-bg: #101820;
+    --gold:      #d4a843;
+    --gold-bg:   #1a1608;
+    --accent:    #5b7ef5;
+    --accent-dim:#1c2348;
+    --green:     #4db88a;
+    --green-dim: #0d1f17;
+    --red:       #e05555;
+    --red-dim:   #1f0e0e;
+    --purple:    #c39af0;
+    --purple-dim:#1a1028;
+    --yandex:    #fc3f1d;
+    --yandex-dim:#1f0d08;
+    --github:    #f0f6fc;
+    --github-bg: #0d1117;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', sans-serif;
+    --display: 'Space Grotesk', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  .layout { display: flex; min-height: 100vh; }
+
+  /* ── SIDEBAR NAV ───────────────────────────── */
+  nav {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 32px 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  .nav-logo {
+    padding: 0 24px 28px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  .nav-logo span {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .nav-logo strong {
+    font-family: var(--display);
+    font-size: 17px;
+    color: var(--text);
+  }
+
+  nav a {
+    display: block;
+    padding: 7px 24px;
+    font-size: 13px;
+    color: var(--subtle);
+    text-decoration: none;
+    transition: all .2s ease;
+    border-left: 2px solid transparent;
+  }
+  nav a:hover {
+    color: var(--text);
+    background: var(--muted);
+    padding-left: 28px;
+  }
+  nav a.active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    background: var(--accent-dim);
+  }
+
+  .nav-section {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--subtle);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    padding: 16px 24px 6px;
+  }
+
+  /* ── GITHUB SIDEBAR LINK ───────────────────── */
+  .nav-github {
+    margin: 20px 16px 0;
+    padding: 14px;
+    background: var(--github-bg);
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: all .25s ease;
+    cursor: pointer;
+  }
+  .nav-github:hover {
+    border-color: var(--github);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(240,246,252,.06);
+    padding-left: 14px !important;
+  }
+  .nav-github-icon {
+    width: 28px; height: 28px;
+    background: var(--github);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #0d1117;
+    flex-shrink: 0;
+  }
+  .nav-github-icon svg {
+    width: 18px; height: 18px;
+  }
+  .nav-github-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .nav-github-text strong {
+    display: block;
+    font-family: var(--display);
+    font-size: 12px;
+    color: var(--github);
+    font-weight: 600;
+  }
+  .nav-github-text span {
+    display: block;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--subtle);
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    margin-top: 1px;
+  }
+  .nav-github-arrow {
+    color: var(--subtle);
+    font-size: 14px;
+    transition: transform .25s ease;
+  }
+  .nav-github:hover .nav-github-arrow {
+    color: var(--github);
+    transform: translateX(3px);
+  }
+
+  /* ── MAIN ──────────────────────────────────── */
+  main {
+    flex: 1;
+    max-width: 980px;
+    padding: 56px 60px;
+  }
+
+  section { margin-bottom: 80px; }
+
+  h1 {
+    font-family: var(--display);
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 12px;
+  }
+  h1 em { font-style: normal; color: var(--accent); }
+
+  h2 {
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  h3 {
+    font-family: var(--display);
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: var(--text);
+    margin-top: 20px;
+  }
+
+  p { color: #b0b8d0; margin-bottom: 14px; }
+
+  /* ── ANIMATIONS ────────────────────────────── */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(91,126,245,.3); }
+    50%      { box-shadow: 0 0 20px 4px rgba(91,126,245,.15); }
+  }
+  @keyframes pulse-yandex {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(252,63,29,.4); }
+    50%      { box-shadow: 0 0 20px 4px rgba(252,63,29,.2); }
+  }
+  @keyframes pulse-green {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.5; }
+  }
+  @keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-6px); }
+  }
+  @keyframes spinSlow {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+
+  .animate-in {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: all .6s cubic-bezier(.22,1,.36,1);
+  }
+  .animate-in.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── MODAL ─────────────────────────────────── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,.7);
+    backdrop-filter: blur(6px);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    animation: fadeIn .2s ease;
+  }
+  .modal-overlay.open { display: flex; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(30px) scale(.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .modal-content {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    max-width: 680px;
+    width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 32px;
+    position: relative;
+    animation: slideUp .3s ease;
+  }
+  .modal-close {
+    position: absolute;
+    top: 16px; right: 16px;
+    background: var(--muted);
+    border: none;
+    color: var(--subtle);
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all .2s ease;
+    z-index: 2;
+  }
+  .modal-close:hover {
+    background: var(--red-dim);
+    color: var(--red);
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .modal-icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+  .modal-title {
+    font-family: var(--display);
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .modal-subtitle {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+  }
+  .modal-body p {
+    font-size: 13px;
+    color: #9aa0b8;
+    margin-bottom: 10px;
+  }
+  .modal-body strong { color: var(--text); }
+  .modal-body .code-block { margin: 12px 0; }
+
+  .modal-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-right: 6px;
+    margin-bottom: 4px;
+  }
+  .modal-tag.green  { background: var(--green-dim); color: var(--green); border: 1px solid rgba(77,184,138,.3); }
+  .modal-tag.blue   { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(91,126,245,.3); }
+  .modal-tag.amber  { background: var(--gold-bg); color: var(--gold); border: 1px solid rgba(212,168,67,.3); }
+  .modal-tag.purple { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(195,154,240,.2); }
+  .modal-tag.red    { background: var(--red-dim); color: var(--red); border: 1px solid rgba(224,85,85,.2); }
+  .modal-tag.yandex { background: var(--yandex-dim); color: var(--yandex); border: 1px solid rgba(252,63,29,.3); }
+
+  .modal-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 16px 0;
+  }
+
+  .modal-kv {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 4px 12px;
+    font-size: 12px;
+    margin: 12px 0;
+  }
+  .modal-kv dt {
+    font-family: var(--mono);
+    color: var(--subtle);
+  }
+  .modal-kv dd {
+    color: var(--text);
+    font-family: var(--mono);
+  }
+
+  /* блоки внутри модалок */
+  .modal-section {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .modal-section:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+  .modal-section h5 {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+  .modal-bullet {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 5px 0;
+    font-size: 12px;
+    color: #9aa0b8;
+  }
+  .modal-bullet::before {
+    content: '▸';
+    color: var(--muted);
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  /* ── HERO ──────────────────────────────────── */
+  .hero {
+    margin-bottom: 64px;
+    padding-bottom: 40px;
+    border-bottom: 1px solid var(--border);
+    animation: fadeInUp .8s ease forwards;
+  }
+  .hero-tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border: 1px solid #2a3a80;
+    padding: 4px 10px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    animation: pulse-glow 3s ease infinite;
+  }
+  .hero p {
+    font-size: 16px;
+    color: #8892b0;
+    max-width: 600px;
+    margin-top: 12px;
+  }
+
+  /* ── DATA SCALE BANNER ─────────────────────── */
+  .data-scale-banner {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: linear-gradient(135deg, rgba(212,168,67,.05) 0%, rgba(77,184,138,.05) 100%);
+    border: 1px solid rgba(212,168,67,.2);
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+    cursor: pointer;
+    transition: all .25s ease;
+  }
+  .data-scale-banner:hover {
+    border-color: rgba(212,168,67,.4);
+    transform: translateY(-2px);
+  }
+  .dsb-icon {
+    font-size: 30px;
+    animation: float 3s ease-in-out infinite;
+  }
+  .dsb-metrics {
+    display: flex;
+    gap: 28px;
+    flex: 1;
+    flex-wrap: wrap;
+  }
+  .dsb-metric strong {
+    font-family: var(--display);
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--gold);
+    display: block;
+  }
+  .dsb-metric .dsb-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--subtle);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-top: 2px;
+  }
+  .dsb-metric.green strong { color: var(--green); }
+  .dsb-metric.blue strong  { color: var(--accent); }
+
+  /* ── PERFORMANCE BADGE ─────────────────────── */
+  .perf-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    padding: 10px 16px;
+    background: var(--green-dim);
+    border: 1px solid rgba(77,184,138,.3);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+    transition: all .25s ease;
+  }
+  .perf-badge:hover {
+    border-color: var(--green);
+    transform: translateX(3px);
+    box-shadow: 0 4px 14px rgba(77,184,138,.1);
+  }
+  .perf-badge-icon {
+    font-size: 14px;
+    animation: spinSlow 4s linear infinite;
+    display: inline-block;
+  }
+  .perf-badge strong { color: var(--green); font-family: var(--mono); }
+  .perf-badge .perf-arrow { color: var(--subtle); transition: transform .2s ease; }
+  .perf-badge:hover .perf-arrow { color: var(--green); transform: translateX(3px); }
+
+  /* ── YANDEX CLOUD BANNER ───────────────────── */
+  .yandex-banner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: linear-gradient(135deg, var(--yandex-dim) 0%, rgba(252,63,29,.05) 100%);
+    border: 1px solid rgba(252,63,29,.3);
+    border-radius: 10px;
+    padding: 14px 20px;
+    margin-top: 16px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+    transition: all .25s ease;
+    animation: pulse-yandex 4s ease infinite;
+  }
+  .yandex-banner:hover {
+    border-color: var(--yandex);
+    transform: translateY(-2px);
+  }
+  .yandex-banner-icon {
+    width: 36px; height: 36px;
+    background: var(--yandex);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .yandex-banner-text strong { color: var(--yandex); font-family: var(--display); }
+  .yandex-banner-text .yb-meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+    margin-top: 2px;
+    display: block;
+  }
+
+  /* ── GITHUB CARD (HERO) ────────────────────── */
+  .github-hero-card {
+    margin-top: 16px;
+    background: var(--github-bg);
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 18px 22px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    text-decoration: none;
+    color: inherit;
+    transition: all .25s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .github-hero-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at top right, rgba(240,246,252,.04) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .github-hero-card:hover {
+    border-color: var(--github);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  .github-logo {
+    width: 44px; height: 44px;
+    background: var(--github);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #0d1117;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 1px #30363d;
+  }
+  .github-logo svg { width: 26px; height: 26px; }
+  .github-info { flex: 1; }
+  .github-info strong {
+    display: block;
+    font-family: var(--display);
+    font-size: 15px;
+    color: var(--github);
+    margin-bottom: 2px;
+  }
+  .github-info .gh-path {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+  }
+  .github-info .gh-path code {
+    color: var(--accent);
+    background: rgba(91,126,245,.1);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .github-cta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+    border: 1px solid #30363d;
+    padding: 6px 12px;
+    border-radius: 6px;
+    transition: all .2s ease;
+  }
+  .github-hero-card:hover .github-cta {
+    color: var(--github);
+    border-color: var(--github);
+  }
+
+  /* ── STATS COUNTER ─────────────────────────── */
+  .stats-row {
+    display: flex;
+    gap: 16px;
+    margin-top: 28px;
+    flex-wrap: wrap;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 24px;
+    min-width: 130px;
+    text-align: center;
+    transition: all .3s ease;
+    cursor: pointer;
+    flex: 1;
+  }
+  .stat-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(91,126,245,.12);
+  }
+  .stat-num {
+    font-family: var(--display);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent);
+    display: block;
+  }
+  .stat-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    margin-top: 4px;
+  }
+
+  /* ── STACK BADGES ──────────────────────────── */
+  .stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 24px;
+  }
+  .badge {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    color: var(--subtle);
+    background: var(--surface);
+    transition: all .25s ease;
+    cursor: pointer;
+  }
+  .badge:hover {
+    transform: translateY(-2px);
+    border-color: var(--subtle);
+    color: var(--text);
+  }
+  .badge.blue   { border-color: #2a4080; color: var(--accent); background: var(--accent-dim); }
+  .badge.blue:hover  { border-color: var(--accent); }
+  .badge.amber  { border-color: #4a3800; color: var(--gold);   background: var(--gold-bg); }
+  .badge.amber:hover { border-color: var(--gold); }
+  .badge.teal   { border-color: #1a3828; color: var(--green);  background: var(--green-dim); }
+  .badge.teal:hover  { border-color: var(--green); }
+  .badge.purple { border-color: #2a1848; color: var(--purple); background: var(--purple-dim); }
+  .badge.purple:hover { border-color: var(--purple); }
+  .badge.red    { border-color: #3a1818; color: var(--red); background: var(--red-dim); }
+  .badge.red:hover { border-color: var(--red); }
+  .badge.yandex { border-color: rgba(252,63,29,.4); color: var(--yandex); background: var(--yandex-dim); }
+  .badge.yandex:hover { border-color: var(--yandex); }
+
+  /* ── PIPELINE FLOW ─────────────────────────── */
+  .pipeline-flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 32px 0;
+    overflow-x: auto;
+    padding: 12px 0;
+  }
+  .pf-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 110px;
+    transition: transform .3s ease;
+    cursor: pointer;
+  }
+  .pf-node:hover { transform: translateY(-6px); }
+  .pf-icon {
+    width: 52px; height: 52px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    margin-bottom: 8px;
+    transition: all .3s ease;
+    border: 1px solid transparent;
+  }
+  .pf-node:hover .pf-icon {
+    border-color: currentColor;
+    box-shadow: 0 6px 20px rgba(0,0,0,.3);
+  }
+  .pf-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+    text-align: center;
+  }
+  .pf-arrow {
+    flex-shrink: 0;
+    color: var(--muted);
+    font-size: 18px;
+    margin: 0 4px;
+    padding-bottom: 16px;
+    animation: shimmer 2s linear infinite;
+    background: linear-gradient(90deg, var(--muted) 0%, var(--text) 50%, var(--muted) 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ── ARCHITECTURE DIAGRAM ──────────────────── */
+  .arch-diagram {
+    margin-top: 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    overflow: hidden;
+    position: relative;
+  }
+  .arch-diagram-img {
+    max-width: 100%;
+    border-radius: 8px;
+    cursor: zoom-in;
+    transition: transform .3s ease;
+  }
+  .arch-diagram-img:hover {
+    transform: scale(1.02);
+  }
+  .arch-diagram-caption {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+    margin-top: 12px;
+    letter-spacing: .05em;
+  }
+
+  /* ── YANDEX CARD ───────────────────────────── */
+  .yandex-card {
+    background: linear-gradient(135deg, var(--yandex-dim) 0%, rgba(252,63,29,.03) 100%);
+    border: 2px solid rgba(252,63,29,.3);
+    border-radius: 14px;
+    padding: 28px;
+    margin-top: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .yandex-card::before {
+    content: '';
+    position: absolute;
+    top: -30%; right: -10%;
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(252,63,29,.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .yc-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+    position: relative;
+  }
+  .yc-logo {
+    width: 56px; height: 56px;
+    background: var(--yandex);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 26px;
+    flex-shrink: 0;
+    box-shadow: 0 4px 16px rgba(252,63,29,.3);
+  }
+  .yc-title {
+    font-family: var(--display);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--yandex);
+  }
+  .yc-subtitle {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+    margin-top: 2px;
+  }
+  .yc-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--green);
+    background: var(--green-dim);
+    border: 1px solid rgba(77,184,138,.3);
+    padding: 4px 10px;
+    border-radius: 12px;
+  }
+  .yc-status::before {
+    content: '';
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px rgba(77,184,138,.6);
+    animation: pulse-green 2s ease infinite;
+  }
+
+  .yc-specs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    position: relative;
+  }
+  .yc-spec {
+    background: rgba(0,0,0,.3);
+    border: 1px solid rgba(252,63,29,.15);
+    border-radius: 10px;
+    padding: 14px 16px;
+    transition: all .25s ease;
+    cursor: pointer;
+  }
+  .yc-spec:hover {
+    border-color: rgba(252,63,29,.4);
+    transform: translateY(-2px);
+  }
+  .yc-spec-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    margin-bottom: 6px;
+  }
+  .yc-spec-value {
+    font-family: var(--display);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .yc-spec-value small {
+    font-size: 11px;
+    color: var(--subtle);
+    font-weight: 400;
+    font-family: var(--mono);
+    margin-left: 4px;
+  }
+
+  /* ── DOCKER GRID & GROUPS ──────────────────── */
+  .docker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .docker-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    transition: all .25s ease;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .docker-container::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--muted);
+    transition: width .25s ease;
+  }
+  .docker-container:hover {
+    transform: translateY(-3px);
+    border-color: rgba(255,255,255,.1);
+  }
+  .docker-container:hover::before { width: 5px; }
+
+  .dc-orange::before { background: var(--bronze); }
+  .dc-orange:hover  { border-color: var(--bronze); box-shadow: 0 4px 16px rgba(200,121,65,.1); }
+  .dc-blue::before  { background: var(--accent); }
+  .dc-blue:hover    { border-color: var(--accent); box-shadow: 0 4px 16px rgba(91,126,245,.1); }
+  .dc-green::before { background: var(--green); }
+  .dc-green:hover   { border-color: var(--green); box-shadow: 0 4px 16px rgba(77,184,138,.1); }
+  .dc-amber::before { background: var(--gold); }
+  .dc-amber:hover   { border-color: var(--gold); box-shadow: 0 4px 16px rgba(212,168,67,.1); }
+  .dc-purple::before{ background: var(--purple); }
+  .dc-purple:hover  { border-color: var(--purple); box-shadow: 0 4px 16px rgba(195,154,240,.1); }
+  .dc-silver::before{ background: var(--silver); }
+  .dc-silver:hover  { border-color: var(--silver); box-shadow: 0 4px 16px rgba(138,180,212,.1); }
+  .dc-red::before   { background: var(--red); }
+  .dc-red:hover     { border-color: var(--red); box-shadow: 0 4px 16px rgba(224,85,85,.1); }
+
+  .dc-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .dc-icon { font-size: 16px; }
+  .dc-name { font-family: var(--display); font-weight: 600; font-size: 13px; color: var(--text); }
+  .dc-meta { font-family: var(--mono); font-size: 10px; color: var(--subtle); line-height: 1.6; }
+  .dc-port {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 10px;
+    background: rgba(0,0,0,.3);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: var(--accent);
+    margin-right: 4px;
+  }
+
+  .docker-group { margin-top: 24px; }
+  .docker-group-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .docker-group-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── LAYER CARDS ───────────────────────────── */
+  .layer-grid { display: flex; flex-direction: column; gap: 20px; }
+
+  .layer-card {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    padding: 28px;
+    position: relative;
+    overflow: hidden;
+    transition: all .3s ease;
+  }
+  .layer-card:hover {
+    border-color: rgba(255,255,255,.08);
+    box-shadow: 0 8px 32px rgba(0,0,0,.3);
+  }
+  .layer-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    transition: width .3s ease;
+  }
+  .layer-card:hover::before { width: 6px; }
+  .layer-bronze { background: var(--bronze-bg); }
+  .layer-bronze::before { background: var(--bronze); }
+  .layer-silver { background: var(--silver-bg); }
+  .layer-silver::before { background: var(--silver); }
+  .layer-gold   { background: var(--gold-bg); }
+  .layer-gold::before   { background: var(--gold); }
+
+  .layer-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .layer-pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 20px;
+    transition: all .3s ease;
+  }
+  .layer-card:hover .layer-pill { transform: scale(1.05); }
+  .pill-bronze { background: #2e1a0a; color: var(--bronze); border: 1px solid var(--bronze); }
+  .pill-silver { background: #0d1e2e; color: var(--silver); border: 1px solid var(--silver); }
+  .pill-gold   { background: #1e1608; color: var(--gold);   border: 1px solid var(--gold); }
+
+  .layer-title {
+    font-family: var(--display);
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .io-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .io-box {
+    background: rgba(0,0,0,.25);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    transition: all .25s ease;
+  }
+  .io-box:hover {
+    border-color: rgba(255,255,255,.08);
+    background: rgba(0,0,0,.35);
+  }
+  .io-box-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .io-box-label.in  { color: #7a9abf; }
+  .io-box-label.out { color: var(--green); }
+  .io-list { list-style: none; }
+  .io-list li {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--subtle);
+    padding: 3px 0;
+    transition: color .2s ease;
+  }
+  .io-list li:hover { color: var(--text); }
+  .io-list li::before { content: '→ '; color: var(--muted); }
+
+  .transform-list {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .transform-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    color: #9aa0b8;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: all .2s ease;
+  }
+  .transform-item:hover {
+    background: rgba(255,255,255,.03);
+    color: var(--text);
+  }
+  .transform-icon { flex-shrink: 0; margin-top: 2px; }
+
+  /* ── CHAIN GRID ────────────────────────────── */
+  .chain-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .chain-tag {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--subtle);
+    text-align: center;
+    transition: all .25s ease;
+    cursor: pointer;
+  }
+  .chain-tag:hover {
+    border-color: var(--silver);
+    color: var(--silver);
+    transform: translateY(-3px);
+    box-shadow: 0 6px 18px rgba(138,180,212,.1);
+  }
+
+  /* ── MAPPING TABLE ─────────────────────────── */
+  .mapping-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin-top: 24px;
+    overflow: hidden;
+  }
+  .mapping-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .mapping-icon {
+    width: 42px; height: 42px;
+    border-radius: 10px;
+    background: var(--gold-bg);
+    border: 1px solid rgba(212,168,67,.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+  }
+  .mapping-title {
+    font-family: var(--display);
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .mapping-desc { font-size: 13px; color: var(--subtle); }
+
+  .mapping-table-wrap {
+    overflow-x: auto;
+    margin-top: 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .mapping-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    min-width: 700px;
+  }
+  .mapping-table th {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    text-align: left;
+    padding: 10px 14px;
+    background: rgba(0,0,0,.3);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+  }
+  .mapping-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    color: #9aa0b8;
+    transition: all .15s ease;
+  }
+  .mapping-table tr { cursor: pointer; }
+  .mapping-table tr:hover td {
+    background: rgba(91,126,245,.04);
+    color: var(--text);
+  }
+  .mapping-table tr:last-child td { border-bottom: none; }
+  .td-brand  { color: var(--accent); }
+  .td-chip   { color: var(--silver); }
+  .td-pkg    { color: var(--bronze); }
+  .td-flav   { color: var(--green); }
+  .td-weight { color: var(--gold); }
+  .td-null   { color: var(--muted); font-style: italic; }
+  .type      { color: #c39af0; }
+
+  /* ── DAG TASKS ─────────────────────────────── */
+  .dag-tasks { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; }
+  .dag-task {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    transition: all .25s ease;
+    cursor: pointer;
+  }
+  .dag-task:hover {
+    border-color: var(--accent);
+    transform: translateX(4px);
+    box-shadow: 0 4px 20px rgba(91,126,245,.08);
+  }
+  .dag-task-num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border: 1px solid #2a3a80;
+    border-radius: 4px;
+    padding: 2px 8px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .dag-task-body h4 {
+    font-family: var(--display);
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .dag-task-body p { font-size: 13px; margin: 0; color: #8892b0; }
+
+  .dag-arrow {
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+    padding: 4px 0;
+  }
+
+  /* ── OBT CARD ──────────────────────────────── */
+  .obt-card {
+    background: var(--gold-bg);
+    border: 2px solid var(--gold);
+    border-radius: 12px;
+    padding: 28px;
+    position: relative;
+    overflow: hidden;
+    margin-top: 24px;
+  }
+  .obt-card::after {
+    content: '';
+    position: absolute;
+    top: -50%; right: -20%;
+    width: 200px; height: 200px;
+    background: radial-gradient(circle, rgba(212,168,67,.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .obt-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .obt-icon {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    background: rgba(212,168,67,.15);
+    border: 1px solid rgba(212,168,67,.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    animation: float 3s ease-in-out infinite;
+  }
+  .obt-title {
+    font-family: var(--display);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--gold);
+  }
+  .obt-subtitle {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+  }
+  .obt-flow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+  }
+  .obt-flow-step {
+    background: rgba(0,0,0,.3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+    transition: all .25s ease;
+    cursor: pointer;
+  }
+  .obt-flow-step:hover {
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+  .obt-flow-arrow {
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  /* ── OBT LIVE DATA TABLE ───────────────────── */
+  .live-data-section {
+    margin-top: 24px;
+    background: rgba(0,0,0,.2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .live-data-header {
+    padding: 14px 18px;
+    background: rgba(0,0,0,.15);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--subtle);
+  }
+  .live-data-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px rgba(77,184,138,.5);
+    animation: pulse-glow 2s ease infinite;
+  }
+  .live-data-wrap { overflow-x: auto; }
+  .live-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    min-width: 1200px;
+  }
+  .live-data-table th {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--subtle);
+    text-align: left;
+    padding: 8px 10px;
+    background: rgba(0,0,0,.2);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+  }
+  .live-data-table td {
+    padding: 7px 10px;
+    border-bottom: 1px solid rgba(30,34,48,.5);
+    font-family: var(--mono);
+    color: #8892b0;
+    white-space: nowrap;
+    transition: all .15s ease;
+  }
+  .live-data-table tr:hover td {
+    background: rgba(91,126,245,.03);
+    color: var(--text);
+  }
+  .cell-chain  { color: var(--accent); }
+  .cell-brand  { color: var(--gold); }
+  .cell-amount { color: var(--green); }
+
+  /* ── PERFORMANCE CARD ──────────────────────── */
+  .perf-card {
+    background: linear-gradient(135deg, var(--green-dim) 0%, rgba(77,184,138,.03) 100%);
+    border: 2px solid rgba(77,184,138,.3);
+    border-radius: 14px;
+    padding: 28px;
+    margin-top: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .perf-card::before {
+    content: '';
+    position: absolute;
+    top: -20%; right: -10%;
+    width: 240px; height: 240px;
+    background: radial-gradient(circle, rgba(77,184,138,.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .perf-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .perf-icon-big {
+    width: 50px; height: 50px;
+    border-radius: 12px;
+    background: rgba(77,184,138,.15);
+    border: 1px solid rgba(77,184,138,.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    animation: spinSlow 4s linear infinite;
+  }
+  .perf-title {
+    font-family: var(--display);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--green);
+  }
+  .perf-subtitle {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+  }
+  .perf-stages {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    position: relative;
+  }
+  .perf-stage {
+    background: rgba(0,0,0,.3);
+    border: 1px solid rgba(77,184,138,.15);
+    border-radius: 10px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: all .25s ease;
+  }
+  .perf-stage:hover {
+    border-color: rgba(77,184,138,.4);
+    transform: translateY(-2px);
+  }
+  .perf-stage-name {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--subtle);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-bottom: 6px;
+  }
+  .perf-stage-value {
+    font-family: var(--display);
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--green);
+  }
+  .perf-stage-meta {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--subtle);
+    margin-top: 4px;
+  }
+  .perf-summary {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(77,184,138,.15);
+    font-size: 12px;
+    color: #9aa0b8;
+    position: relative;
+  }
+  .perf-summary strong { color: var(--green); font-family: var(--mono); }
+
+  /* ── MONITORING ─────────────────────────────── */
+  .monitor-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 20px;
+  }
+  .monitor-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    transition: all .25s ease;
+    cursor: pointer;
+  }
+  .monitor-card:hover {
+    border-color: rgba(255,255,255,.08);
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,.25);
+  }
+  .monitor-card h4 {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .monitor-card p { font-size: 12px; color: var(--subtle); margin: 0; }
+  .monitor-status {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: auto;
+  }
+  .status-live    { background: var(--green-dim); color: var(--green); border: 1px solid rgba(77,184,138,.3); }
+  .status-wip     { background: var(--gold-bg); color: var(--gold); border: 1px solid rgba(212,168,67,.3); }
+  .status-planned { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(195,154,240,.2); }
+
+  /* ── TG BOT ──────────────────────────────────── */
+  .tg-bot-card {
+    margin-top: 16px;
+    background: linear-gradient(135deg, var(--accent-dim) 0%, rgba(91,126,245,.05) 100%);
+    border: 1px solid rgba(91,126,245,.3);
+    border-radius: 10px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 13px;
+    transition: all .25s ease;
+    cursor: pointer;
+  }
+  .tg-bot-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .tg-bot-icon {
+    width: 36px; height: 36px;
+    background: var(--accent);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .tg-bot-meta {
+    font-family: var(--mono);
+    color: var(--subtle);
+    font-size: 11px;
+  }
+  .tg-bot-meta strong {
+    color: var(--accent);
+    font-family: var(--mono);
+  }
+
+  /* ── TODO ───────────────────────────────────── */
+  .todo-list { list-style: none; margin-top: 16px; }
+  .todo-list li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    color: #8892b0;
+    border-radius: 6px;
+    transition: all .2s ease;
+    cursor: default;
+  }
+  .todo-list li:hover {
+    background: rgba(255,255,255,.02);
+    padding-left: 16px;
+  }
+  .todo-list li:last-child { border-bottom: none; }
+  .todo-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: all .3s ease;
+  }
+  .todo-dot.done {
+    background: var(--green);
+    box-shadow: 0 0 8px rgba(77,184,138,.4);
+  }
+  .todo-list li:hover .todo-dot { transform: scale(1.3); }
+
+  /* ── CODE BLOCK ─────────────────────────────── */
+  .code-block {
+    background: #080a0f;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 22px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: #7a9abf;
+    margin-top: 16px;
+    overflow-x: auto;
+    white-space: pre;
+    line-height: 1.7;
+    transition: border-color .3s ease;
+  }
+  .code-block:hover { border-color: var(--muted); }
+  .code-block .kw  { color: #c39af0; }
+  .code-block .str { color: #a8cc8c; }
+  .code-block .cmt { color: var(--muted); }
+  .code-block .fn  { color: #6ab0e0; }
+
+  /* ── EXPANDABLE ────────────────────────────── */
+  .expandable { margin-top: 16px; }
+  .expand-trigger {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--subtle);
+    transition: all .25s ease;
+    user-select: none;
+  }
+  .expand-trigger:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .expand-trigger .arrow {
+    transition: transform .3s ease;
+    font-size: 10px;
+  }
+  .expand-trigger.open .arrow { transform: rotate(90deg); }
+  .expand-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height .4s ease, padding .4s ease;
+    border: 1px solid transparent;
+    border-radius: 0 0 8px 8px;
+    margin-top: -1px;
+  }
+  .expand-content.open {
+    max-height: 3000px;
+    border-color: var(--border);
+    padding: 20px;
+    background: rgba(0,0,0,.15);
+  }
+
+  /* ── RESPONSIVE ────────────────────────────── */
+  @media (max-width: 900px) {
+    nav { display: none; }
+    main { padding: 32px 24px; }
+    .io-row { grid-template-columns: 1fr; }
+    .monitor-grid { grid-template-columns: 1fr; }
+    .stats-row { flex-direction: column; }
+    .chain-grid { grid-template-columns: repeat(2, 1fr); }
+    .modal-overlay { padding: 16px; }
+    .modal-content { padding: 24px; }
+    .dsb-metrics { gap: 16px; }
+    .github-hero-card { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .github-cta { align-self: stretch; text-align: center; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<!-- ── SIDEBAR ────────────────────────────────── -->
+<nav>
+  <div class="nav-logo">
+    <span>Kaftal · Docs</span>
+    <strong>ETL Pipelines v2</strong>
+  </div>
+
+  <div class="nav-section">Обзор</div>
+  <a href="#overview" class="active">Архитектура</a>
+  <a href="#diagram">Схема пайплайна</a>
+  <a href="#infra">Инфраструктура</a>
+  <a href="#stack">Стек технологий</a>
+
+  <div class="nav-section">Слои данных</div>
+  <a href="#bronze">Bronze Layer</a>
+  <a href="#silver">Silver Layer</a>
+  <a href="#gold">Gold Layer</a>
+
+  <div class="nav-section">Подробнее</div>
+  <a href="#mapping">Справочник товаров</a>
+  <a href="#build-mart">Build Mart (OBT)</a>
+  <a href="#performance">Производительность</a>
+  <a href="#dag">Airflow DAGs</a>
+  <a href="#monitoring">Мониторинг</a>
+  <a href="#todo">Roadmap</a>
+
+  <a href="https://github.com/BogdanG888G/Kaftal_Data_Architecture" target="_blank" rel="noopener" class="nav-github">
+    <div class="nav-github-icon">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+    </div>
+    <div class="nav-github-text">
+      <strong>Open Source</strong>
+      <span>GitHub Repository</span>
+    </div>
+    <div class="nav-github-arrow">→</div>
+  </a>
+</nav>
+
+<!-- ── MAIN ───────────────────────────────────── -->
+<main>
+
+  <!-- MODAL -->
+  <div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeModal()">✕</button>
+      <div id="modal-inner"></div>
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <div class="hero" id="overview">
+    <div class="hero-tag">📄 Техническая документация v2</div>
+    <h1>ETL Pipeline<br><em>Kaftal Data Architecture</em></h1>
+    <p>Многоуровневая архитектура обработки данных розничной торговли с medallion-подходом Bronze → Silver → Gold. 11 розничных сетей, 13 Airflow DAG-ов, единый справочник, аналитические дашборды.</p>
+
+    <!-- ── DATA SCALE ── -->
+    <div class="data-scale-banner" onclick="openModal('data-scale')">
+      <div class="dsb-icon">📦</div>
+      <div class="dsb-metrics">
+        <div class="dsb-metric">
+          <strong>~19 ГБ</strong>
+          <div class="dsb-label">Общий объём данных</div>
+        </div>
+        <div class="dsb-metric green">
+          <strong>~14 млн</strong>
+          <div class="dsb-label">Строк в OBT-витрине</div>
+        </div>
+        <div class="dsb-metric blue">
+          <strong>11 / 13</strong>
+          <div class="dsb-label">Сетей / DAG-ов</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PERFORMANCE BADGE ── -->
+    <div class="perf-badge" onclick="openModal('perf-summary')">
+      <span class="perf-badge-icon">⚡</span>
+      <span>Прогрузка <strong>2,5 ГБ</strong> (archive → S3 → Silver) занимает <strong>~2 минуты</strong></span>
+      <span class="perf-arrow">→</span>
+    </div>
+
+    <!-- ── YANDEX ── -->
+    <div class="yandex-banner" onclick="openModal('yc-vm')">
+      <div class="yandex-banner-icon">Y</div>
+      <div class="yandex-banner-text">
+        <strong>Развёрнуто на Yandex Cloud</strong>
+        <span class="yb-meta">Compute VM · 8 vCPU · 32 GB RAM · 160 GB SSD · Ubuntu 24.04 LTS</span>
+      </div>
+    </div>
+
+    <!-- ── GITHUB ── -->
+    <a href="https://github.com/BogdanG888G/Kaftal_Data_Architecture" target="_blank" rel="noopener" class="github-hero-card">
+      <div class="github-logo">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      </div>
+      <div class="github-info">
+        <strong>Исходный код на GitHub</strong>
+        <div class="gh-path"><code>BogdanG888G / Kaftal_Data_Architecture</code></div>
+      </div>
+      <div class="github-cta">View Source ↗</div>
+    </a>
+
+    <div class="stats-row">
+      <div class="stat-card animate-in" onclick="openModal('stat-chains')">
+        <span class="stat-num" data-target="11">0</span>
+        <span class="stat-label">Розничных сетей</span>
+      </div>
+      <div class="stat-card animate-in" onclick="openModal('stat-dags')">
+        <span class="stat-num" data-target="13">0</span>
+        <span class="stat-label">Airflow DAGs</span>
+      </div>
+      <div class="stat-card animate-in" onclick="openModal('stat-containers')">
+        <span class="stat-num" data-target="14">0</span>
+        <span class="stat-label">Docker контейнеров</span>
+      </div>
+      <div class="stat-card animate-in" onclick="openModal('stat-columns')">
+        <span class="stat-num" data-target="42">0</span>
+        <span class="stat-label">Колонок в OBT</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── АРХИТЕКТУРА ─────────────────────────── -->
+  <section>
+    <h2>Общая архитектура</h2>
+    <p>Весь процесс оркестрирован через <strong>Apache Airflow</strong> (13 DAG-ов). Данные проходят три слоя очистки и обогащения. Telegram-уведомления сигнализируют об успехе или ошибках каждого пайплайна.</p>
+
+    <div class="pipeline-flow">
+      <div class="pf-node" onclick="openModal('flow-source')">
+        <div class="pf-icon" style="background:#1e1c10; color:#d4a843;">🗃️</div>
+        <div class="pf-label">CSV / JSON<br><span style="color:#d4a843">11 сетей</span></div>
+      </div>
+      <div class="pf-arrow">→</div>
+      <div class="pf-node" onclick="openModal('flow-bronze')">
+        <div class="pf-icon" style="background:#1e1208; color:#c87941;">⚙️</div>
+        <div class="pf-label">Parquet<br><span style="color:#c87941">S3 Bronze</span></div>
+      </div>
+      <div class="pf-arrow">→</div>
+      <div class="pf-node" onclick="openModal('flow-silver')">
+        <div class="pf-icon" style="background:#0d1620; color:#8ab4d4;">🔥</div>
+        <div class="pf-label">Iceberg<br><span style="color:#8ab4d4">Spark Silver</span></div>
+      </div>
+      <div class="pf-arrow">→</div>
+      <div class="pf-node" onclick="openModal('flow-gold')">
+        <div class="pf-icon" style="background:#1a1608; color:#d4a843;">🏆</div>
+        <div class="pf-label">ClickHouse<br><span style="color:#d4a843">OBT Gold</span></div>
+      </div>
+      <div class="pf-arrow">→</div>
+      <div class="pf-node" onclick="openModal('flow-superset')">
+        <div class="pf-icon" style="background:#101e14; color:#4db88a;">📊</div>
+        <div class="pf-label">Superset<br><span style="color:#4db88a">Дашборды</span></div>
+      </div>
+    </div>
+
+    <p>Параллельно аналитики могут обращаться к любому слою через <strong>Trino</strong> — федеративный SQL-движок для ad-hoc запросов к S3/Iceberg.</p>
+  </section>
+
+  <!-- ─── СХЕМА ───────────────────────────────── -->
+  <section id="diagram">
+    <h2>Схема пайплайна</h2>
+    <p>Высокоуровневая визуализация всего пайплайна — от CSV-файлов сетей до дашбордов в Superset.</p>
+
+    <div class="arch-diagram animate-in">
+      <img class="arch-diagram-img"
+           src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1280 600' font-family='sans-serif'>
+             <defs>
+               <linearGradient id='bg' x1='0' y1='0' x2='1' y2='1'>
+                 <stop offset='0' stop-color='%231a1d28'/>
+                 <stop offset='1' stop-color='%23131620'/>
+               </linearGradient>
+             </defs>
+             <rect width='1280' height='600' fill='url(%23bg)'/>
+             <text x='640' y='80' fill='%23d4a843' font-size='28' font-weight='700' text-anchor='middle'>📐 Сюда вставь свою схему</text>
+             <text x='640' y='130' fill='%237a82a0' font-size='16' text-anchor='middle'>Замени src в img на путь к картинке</text>
+             <text x='640' y='160' fill='%237a82a0' font-size='14' text-anchor='middle'>(например: ./arch-diagram.png)</text>
+             <rect x='90'  y='220' width='180' height='340' rx='10' fill='%231e2230' stroke='%23c87941' stroke-width='2'/>
+             <text x='180' y='250' fill='%23c87941' font-size='14' font-weight='700' text-anchor='middle'>Сети (CSV)</text>
+             <text x='180' y='290' fill='%237a82a0' font-size='12' text-anchor='middle'>X5, Магнит,</text>
+             <text x='180' y='310' fill='%237a82a0' font-size='12' text-anchor='middle'>Ашан, Лента...</text>
+             <text x='180' y='350' fill='%237a82a0' font-size='11' text-anchor='middle'>11 источников</text>
+             <rect x='320' y='220' width='180' height='340' rx='10' fill='%231e2230' stroke='%238ab4d4' stroke-width='2'/>
+             <text x='410' y='250' fill='%238ab4d4' font-size='14' font-weight='700' text-anchor='middle'>MinIO + Spark</text>
+             <text x='410' y='290' fill='%237a82a0' font-size='12' text-anchor='middle'>Bronze → Silver</text>
+             <text x='410' y='320' fill='%237a82a0' font-size='12' text-anchor='middle'>Iceberg tables</text>
+             <rect x='550' y='220' width='180' height='340' rx='10' fill='%231e2230' stroke='%23d4a843' stroke-width='2'/>
+             <text x='640' y='250' fill='%23d4a843' font-size='14' font-weight='700' text-anchor='middle'>ClickHouse</text>
+             <text x='640' y='290' fill='%237a82a0' font-size='12' text-anchor='middle'>OBT sales_mart</text>
+             <text x='640' y='320' fill='%237a82a0' font-size='12' text-anchor='middle'>42 columns</text>
+             <rect x='780' y='220' width='180' height='340' rx='10' fill='%231e2230' stroke='%234db88a' stroke-width='2'/>
+             <text x='870' y='250' fill='%234db88a' font-size='14' font-weight='700' text-anchor='middle'>Superset</text>
+             <text x='870' y='290' fill='%237a82a0' font-size='12' text-anchor='middle'>Дашборды</text>
+             <rect x='1010' y='220' width='180' height='340' rx='10' fill='%231e2230' stroke='%235b7ef5' stroke-width='2'/>
+             <text x='1100' y='250' fill='%235b7ef5' font-size='14' font-weight='700' text-anchor='middle'>Airflow</text>
+             <text x='1100' y='290' fill='%237a82a0' font-size='12' text-anchor='middle'>13 DAGs</text>
+             <text x='270' y='400' fill='%23d4a843' font-size='20' text-anchor='middle'>→</text>
+             <text x='500' y='400' fill='%23d4a843' font-size='20' text-anchor='middle'>→</text>
+             <text x='730' y='400' fill='%23d4a843' font-size='20' text-anchor='middle'>→</text>
+             <text x='960' y='400' fill='%23d4a843' font-size='20' text-anchor='middle'>↕</text>
+           </svg>"
+           alt="Схема архитектуры">
+      <div class="arch-diagram-caption">↑ ЗАМЕНИ src НА СВОЮ КАРТИНКУ (например ./arch-diagram.png)</div>
+    </div>
+  </section>
+
+  <!-- ─── ИНФРАСТРУКТУРА ───────────────────────── -->
+  <section id="infra">
+    <h2>Инфраструктура</h2>
+    <p>Вся система развёрнута на одной виртуальной машине в Yandex Cloud, оркестрирована через Docker Compose.</p>
+
+    <div class="yandex-card animate-in">
+      <div class="yc-header">
+        <div class="yc-logo">Y</div>
+        <div>
+          <div class="yc-title">Yandex Cloud · Compute VM</div>
+          <div class="yc-subtitle">Виртуальная машина · Compute Cloud</div>
+        </div>
+        <div class="yc-status">Running</div>
+      </div>
+
+      <div class="yc-specs">
+        <div class="yc-spec" onclick="openModal('yc-cpu')">
+          <div class="yc-spec-label">vCPU</div>
+          <div class="yc-spec-value">8 <small>Ice Lake</small></div>
+        </div>
+        <div class="yc-spec" onclick="openModal('yc-ram')">
+          <div class="yc-spec-label">RAM</div>
+          <div class="yc-spec-value">32 <small>ГБ</small></div>
+        </div>
+        <div class="yc-spec" onclick="openModal('yc-disk')">
+          <div class="yc-spec-label">Disk</div>
+          <div class="yc-spec-value">160 <small>ГБ SSD</small></div>
+        </div>
+        <div class="yc-spec" onclick="openModal('yc-os')">
+          <div class="yc-spec-label">OS</div>
+          <div class="yc-spec-value" style="font-size:14px;">Ubuntu <small>24.04 LTS</small></div>
+        </div>
+        <div class="yc-spec" onclick="openModal('yc-zone')">
+          <div class="yc-spec-label">Region</div>
+          <div class="yc-spec-value" style="font-size:14px;">ru-central1</div>
+        </div>
+        <div class="yc-spec" onclick="openModal('yc-price')">
+          <div class="yc-spec-label">Цена/мес</div>
+          <div class="yc-spec-value">~6 350 <small>₽</small></div>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:36px;">Docker Compose · 14 контейнеров</h3>
+    <p style="font-size:13px;">Все сервисы изолированы в контейнерах и общаются через единую внутреннюю сеть Docker.</p>
+
+    <div class="docker-group">
+      <div class="docker-group-title">🔄 Оркестрация и хранилища</div>
+      <div class="docker-grid">
+        <div class="docker-container dc-blue" onclick="openModal('docker-airflow')">
+          <div class="dc-header"><span class="dc-icon">🌊</span><span class="dc-name">airflow</span></div>
+          <div class="dc-meta"><span class="dc-port">:8080</span> Web UI<br>LocalExecutor + Postgres</div>
+        </div>
+        <div class="docker-container dc-purple" onclick="openModal('docker-postgres')">
+          <div class="dc-header"><span class="dc-icon">🐘</span><span class="dc-name">postgres</span></div>
+          <div class="dc-meta"><span class="dc-port">:5433</span> postgres:16<br>Метабаза Airflow</div>
+        </div>
+        <div class="docker-container dc-red" onclick="openModal('docker-minio')">
+          <div class="dc-header"><span class="dc-icon">🪣</span><span class="dc-name">minio</span></div>
+          <div class="dc-meta"><span class="dc-port">:9000</span><span class="dc-port">:9001</span><br>S3-storage + UI</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="docker-group">
+      <div class="docker-group-title">⚡ Вычисления и обработка</div>
+      <div class="docker-grid">
+        <div class="docker-container dc-orange" onclick="openModal('docker-spark-master')">
+          <div class="dc-header"><span class="dc-icon">🔥</span><span class="dc-name">spark-master</span></div>
+          <div class="dc-meta"><span class="dc-port">:8082</span><span class="dc-port">:7077</span><br>Spark 3.5.1</div>
+        </div>
+        <div class="docker-container dc-orange" onclick="openModal('docker-spark-worker')">
+          <div class="dc-header"><span class="dc-icon">⚙️</span><span class="dc-name">spark-worker</span></div>
+          <div class="dc-meta">2 cores · 2GB RAM<br>Custom Dockerfile</div>
+        </div>
+        <div class="docker-container dc-silver" onclick="openModal('docker-iceberg')">
+          <div class="dc-header"><span class="dc-icon">🧊</span><span class="dc-name">iceberg-rest</span></div>
+          <div class="dc-meta"><span class="dc-port">:8181</span> REST Catalog<br>Warehouse: s3://warehouse</div>
+        </div>
+        <div class="docker-container dc-purple" onclick="openModal('docker-jupyter')">
+          <div class="dc-header"><span class="dc-icon">📓</span><span class="dc-name">jupyter</span></div>
+          <div class="dc-meta"><span class="dc-port">:8888</span> PySpark<br>Notebook lab</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="docker-group">
+      <div class="docker-group-title">📊 Хранение и аналитика</div>
+      <div class="docker-grid">
+        <div class="docker-container dc-amber" onclick="openModal('docker-clickhouse')">
+          <div class="dc-header"><span class="dc-icon">🏛️</span><span class="dc-name">clickhouse</span></div>
+          <div class="dc-meta"><span class="dc-port">:8123</span><span class="dc-port">:9009</span><br>OLAP · MergeTree</div>
+        </div>
+        <div class="docker-container dc-silver" onclick="openModal('docker-trino')">
+          <div class="dc-header"><span class="dc-icon">🔍</span><span class="dc-name">trino</span></div>
+          <div class="dc-meta"><span class="dc-port">:8085</span> trino:435<br>Ad-hoc SQL Engine</div>
+        </div>
+        <div class="docker-container dc-green" onclick="openModal('docker-superset')">
+          <div class="dc-header"><span class="dc-icon">📊</span><span class="dc-name">superset</span></div>
+          <div class="dc-meta"><span class="dc-port">:8088</span> BI Dashboard<br>Custom Dockerfile</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="docker-group">
+      <div class="docker-group-title">📈 Мониторинг (Prometheus stack)</div>
+      <div class="docker-grid">
+        <div class="docker-container dc-red" onclick="openModal('docker-prometheus')">
+          <div class="dc-header"><span class="dc-icon">🔥</span><span class="dc-name">prometheus</span></div>
+          <div class="dc-meta"><span class="dc-port">:9090</span> Metrics DB<br>Time-series</div>
+        </div>
+        <div class="docker-container dc-amber" onclick="openModal('docker-grafana')">
+          <div class="dc-header"><span class="dc-icon">📈</span><span class="dc-name">grafana</span></div>
+          <div class="dc-meta"><span class="dc-port">:3000</span> Dashboards<br>Provisioned datasources</div>
+        </div>
+        <div class="docker-container dc-blue" onclick="openModal('docker-cadvisor')">
+          <div class="dc-header"><span class="dc-icon">📦</span><span class="dc-name">cadvisor</span></div>
+          <div class="dc-meta"><span class="dc-port">:8083</span> Container metrics<br>Docker stats</div>
+        </div>
+        <div class="docker-container dc-blue" onclick="openModal('docker-node-exporter')">
+          <div class="dc-header"><span class="dc-icon">🖥️</span><span class="dc-name">node-exporter</span></div>
+          <div class="dc-meta"><span class="dc-port">:9100</span> Host metrics<br>CPU/RAM/Disk</div>
+        </div>
+        <div class="docker-container dc-amber" onclick="openModal('docker-ch-exporter')">
+          <div class="dc-header"><span class="dc-icon">📊</span><span class="dc-name">clickhouse-exporter</span></div>
+          <div class="dc-meta"><span class="dc-port">:9116</span> CH metrics<br>Queries/Inserts</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── СТЕК ────────────────────────────────── -->
+  <section id="stack">
+    <h2>Стек технологий</h2>
+    <div class="stack">
+      <span class="badge yandex" onclick="openModal('tech-yandex')">Yandex Cloud</span>
+      <span class="badge blue" onclick="openModal('tech-airflow')">Apache Airflow</span>
+      <span class="badge" onclick="openModal('tech-spark')">Apache Spark</span>
+      <span class="badge amber" onclick="openModal('tech-iceberg')">Apache Iceberg</span>
+      <span class="badge" onclick="openModal('tech-minio')">MinIO (S3)</span>
+      <span class="badge amber" onclick="openModal('tech-clickhouse')">ClickHouse</span>
+      <span class="badge" onclick="openModal('tech-trino')">Trino</span>
+      <span class="badge teal" onclick="openModal('tech-superset')">Apache Superset</span>
+      <span class="badge purple" onclick="openModal('tech-docker')">Docker Compose</span>
+      <span class="badge red" onclick="openModal('tech-telegram')">Telegram Alerts</span>
+      <span class="badge" onclick="openModal('tech-python')">Python / PySpark</span>
+      <span class="badge teal" onclick="openModal('tech-grafana')">Grafana + Prometheus</span>
+    </div>
+  </section>
+
+  <!-- ─── BRONZE ──────────────────────────────── -->
+  <section id="bronze">
+    <h2>Bronze Layer — Raw Data Lake</h2>
+    <p>Первый слой: сырые данные как есть. Каждая из 11 сетей обрабатывается <strong>своим DAG-ом</strong> в Airflow.</p>
+
+    <div class="layer-grid">
+      <div class="layer-card layer-bronze animate-in">
+        <div class="layer-header">
+          <span class="layer-pill pill-bronze">BRONZE</span>
+          <span class="layer-title">CSV → S3 (raw bucket) — 11 DAGs</span>
+        </div>
+
+        <div class="transform-list">
+          <div class="transform-item"><span class="transform-icon">👁️</span> <strong>FileSensor</strong> ожидает появления файлов в <code style="font-family:var(--mono);font-size:12px;color:#8ab4d4">/opt/airflow/data/{chain}*</code></div>
+          <div class="transform-item"><span class="transform-icon">📤</span> <strong>load_to_s3_raw</strong>: загружает CSV в S3 (MinIO) bucket <code style="font-family:var(--mono);font-size:12px;color:#c87941">raw</code>, перемещает в архив</div>
+          <div class="transform-item"><span class="transform-icon">🚫</span> Схема и типы данных <em>не трогаются</em> — всё хранится «как пришло»</div>
+        </div>
+
+        <h3>Розничные сети (11 DAG-ов)</h3>
+        <div class="chain-grid">
+          <div class="chain-tag" onclick="openModal('chain-x5')">🟡 X5 Group</div>
+          <div class="chain-tag" onclick="openModal('chain-diksi')">🟡 Дикси</div>
+          <div class="chain-tag" onclick="openModal('chain-magnit')">🟡 Магнит</div>
+          <div class="chain-tag" onclick="openModal('chain-aushan')">🟡 Ашан</div>
+          <div class="chain-tag" onclick="openModal('chain-lenta')">🟡 Лента</div>
+          <div class="chain-tag" onclick="openModal('chain-okey')">🟡 О'кей</div>
+          <div class="chain-tag" onclick="openModal('chain-perekrestok')">🟡 Перекрёсток</div>
+          <div class="chain-tag" onclick="openModal('chain-pyaterochka')">🟡 Пятёрочка</div>
+          <div class="chain-tag" onclick="openModal('chain-vernyi')">🟡 Верный</div>
+          <div class="chain-tag" onclick="openModal('chain-bristol')">🟡 Бристоль</div>
+          <div class="chain-tag" onclick="openModal('chain-krasnoebeloe')">🟡 Красное&Белое</div>
+        </div>
+
+        <div class="io-row" style="margin-top:20px;">
+          <div class="io-box">
+            <div class="io-box-label in">📨 Входные данные</div>
+            <ul class="io-list">
+              <li>CSV файлы от 11 сетей</li>
+              <li>Разные кодировки, разделители</li>
+              <li>Строки без типизации</li>
+            </ul>
+          </div>
+          <div class="io-box">
+            <div class="io-box-label out">📤 Выходные данные</div>
+            <ul class="io-list">
+              <li>s3://raw/{chain}_{month}_{year}.csv</li>
+              <li>Формат: оригинальный CSV</li>
+              <li>Архив: /opt/airflow/archive/</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── SILVER ──────────────────────────────── -->
+  <section id="silver">
+    <h2>Silver Layer — Нормализация</h2>
+    <p>SparkSubmitOperator в каждом DAG-е запускает Spark-скрипт, читает из S3, нормализует данные и записывает в Iceberg.</p>
+
+    <div class="layer-card layer-silver animate-in">
+      <div class="layer-header">
+        <span class="layer-pill pill-silver">SILVER</span>
+        <span class="layer-title">Spark → Iceberg (11 таблиц)</span>
+      </div>
+
+      <div class="transform-list">
+        <div class="transform-item"><span class="transform-icon">🗺️</span> <strong>Маппинг колонок</strong>: каждая сеть имеет свой <code style="font-family:var(--mono);font-size:12px;color:#8ab4d4">COLUMN_RENAME_MAP</code></div>
+        <div class="transform-item"><span class="transform-icon">🔢</span> <strong>Кастинг типов</strong>: строки → числа, даты, через <code style="font-family:var(--mono);font-size:12px;color:#8ab4d4">SILVER_TYPES</code></div>
+        <div class="transform-item"><span class="transform-icon">📅</span> <strong>Извлечение периода</strong>: месяц/год парсятся из имени файла и данных</div>
+        <div class="transform-item"><span class="transform-icon">🔍</span> <strong>Дедупликация</strong>: проверка <code style="font-family:var(--mono);font-size:12px;color:#8ab4d4">file_name</code> перед записью</div>
+        <div class="transform-item"><span class="transform-icon">📋</span> <strong>Партиции</strong>: <code style="font-family:var(--mono);font-size:12px;color:#8ab4d4">retail_chain / year / month</code></div>
+      </div>
+
+      <div class="expandable">
+        <div class="expand-trigger" onclick="toggleExpand(this)">
+          <span class="arrow">▶</span>
+          Показать все Iceberg-таблицы Silver
+        </div>
+        <div class="expand-content">
+          <div class="code-block" style="margin:0;"><span class="cmt"># Iceberg Silver — 11 таблиц</span>
+iceberg.x5_silver.sales
+iceberg.diksi_silver.sales
+iceberg.magnit_silver.sales
+iceberg.aushan_silver.sales
+iceberg.lenta_silver.sales
+iceberg.okey_silver.sales
+iceberg.perekrestok_silver.sales
+iceberg.pyaterochka_silver.sales
+iceberg.vernyi_silver.sales
+iceberg.bristol_silver.sales
+iceberg.krasnoebeloe_silver.sales</div>
+        </div>
+      </div>
+
+      <div class="io-row">
+        <div class="io-box">
+          <div class="io-box-label in">📨 Входные данные</div>
+          <ul class="io-list">
+            <li>CSV из S3 bucket «raw»</li>
+            <li>Разные схемы у каждой сети</li>
+          </ul>
+        </div>
+        <div class="io-box">
+          <div class="io-box-label out">📤 Выходные данные</div>
+          <ul class="io-list">
+            <li>11 Iceberg-таблиц</li>
+            <li>Типизированные поля + метаданные</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== ДОБАВЛЕННЫЙ БЛОК ПРИМЕРОВ ДАННЫХ ========== -->
+    <div style="margin-top: 40px;">
+      <h3 style="border-bottom: 1px solid var(--border); padding-bottom: 6px;">Примеры данных из Silver-таблиц</h3>
+      <p>Ниже приведены реальные выгрузки из Iceberg-таблиц после нормализации. Для каждой сети показаны первые строки с актуальными продажами.</p>
+
+      <!-- Ашан -->
+      <h4 style="margin: 32px 0 12px 0; color: var(--silver);">🏪 Ашан — iceberg.aushan_silver.sales</h4>
+      <div class="mapping-table-wrap">
+        <table class="mapping-table" style="min-width: 1200px;">
+          <thead><tr><th>year</th><th>month</th><th>retail_chain</th><th>store_format</th><th>region_name</th><th>city_name</th><th>address</th><th>product_name</th><th>sales_quantity</th><th>sales_amount_rub</th><th>sales_cost_price</th><th>file_name</th></tr></thead>
+          <tbody>
+            <tr><td>2026</td><td>Апрель</td><td>Ашан</td><td>Ашан Сити</td><td>Новосибирск</td><td>Новосибирск</td><td>ул. Курчатова, д. 1</td><td>КП/ЧИПСЫ КАРТ,СЫР 130Г</td><td class="td-weight">-6</td><td class="td-weight">-387.54</td><td class="td-weight">0</td><td>aushan_april_2026_part_2</td></tr>
+            <tr><td>2026</td><td>Апрель</td><td>Ашан</td><td>Ашан</td><td>Москва</td><td>Москва</td><td>Рублевское шоссе, д.62</td><td>МОСК.КАРТ.СЫР.200Г</td><td>2</td><td>343.98</td><td>264.55</td><td>aushan_april_2026_part_2</td></tr>
+            <tr><td>2026</td><td>Апрель</td><td>Ашан</td><td>Ашан</td><td>Московская область</td><td>Котельники</td><td>1-й Покровский проезд, д.5</td><td>МОСК.КАРТ.СЫР.200Г</td><td>4</td><td>851.40</td><td>558.58</td><td>aushan_april_2026_part_2</td></tr>
+            <tr><td>2026</td><td>Апрель</td><td>Ашан</td><td>Ашан</td><td>Самара</td><td>Самара</td><td>Московское ш., 24 км, д.5</td><td>МОСК.КАРТ.СЫР.200Г</td><td>1</td><td>209.99</td><td>143.97</td><td>aushan_april_2026_part_2</td></tr>
+            <tr><td>2026</td><td>Апрель</td><td>Ашан</td><td>Ашан</td><td>Уфа</td><td>Уфа</td><td>ул.Рубежная, д.174</td><td>МОСК.КАРТ.СЫР.200Г</td><td>1</td><td>209.99</td><td>139.13</td><td>aushan_april_2026_part_2</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Бристоль -->
+      <h4 style="margin: 32px 0 12px 0; color: var(--silver);">🍟 Бристоль — iceberg.bristol_silver.sales</h4>
+      <div class="mapping-table-wrap">
+        <table class="mapping-table" style="min-width: 1000px;">
+          <thead><tr><th>month</th><th>year</th><th>retail_chain</th><th>product_name</th><th>revenue_rub</th><th>sales_quantity</th><th>cost_price_rub</th><th>average_sell_price</th><th>average_cost_price</th></tr></thead>
+          <tbody>
+            <tr><td>Декабрь</td><td>2025</td><td>Бристоль</td><td>Чипсы LAY'S КРАБ 140Г</td><td>25784840</td><td>148259</td><td>18427627.41</td><td>173.92</td><td>124.29</td></tr>
+            <tr><td>Декабрь</td><td>2025</td><td>Бристоль</td><td>Чипсы LAY'S СМЕТАНА И ЗЕЛЕНЬ 140Г</td><td>25652206</td><td>145282</td><td>18059903.94</td><td>176.57</td><td>124.31</td></tr>
+            <tr><td>Декабрь</td><td>2025</td><td>Бристоль</td><td>Чипсы LAY'S РИФЛЕНЫЕ ЛОСОСЬ 140Г</td><td>25142528</td><td>143256</td><td>17827916.99</td><td>175.51</td><td>124.45</td></tr>
+            <tr><td>Декабрь</td><td>2025</td><td>Бристоль</td><td>Чипсы LAY'S СМЕТАНА И ЛУК 225Г</td><td>24949775</td><td>105292</td><td>17427909.72</td><td>236.96</td><td>165.52</td></tr>
+            <tr><td>Декабрь</td><td>2025</td><td>Бристоль</td><td>Чипсы LAY'S МОЛОДОЙ ЗЕЛЕНЫЙ ЛУК 140Г</td><td>23734071</td><td>135699</td><td>16862172.74</td><td>174.90</td><td>124.26</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Дикси -->
+      <h4 style="margin: 32px 0 12px 0; color: var(--silver);">🏬 Дикси — iceberg.diksi_silver.sales</h4>
+      <div class="mapping-table-wrap">
+        <table class="mapping-table" style="min-width: 1100px;">
+          <thead><tr><th>year</th><th>month</th><th>retail_chain</th><th>city_name</th><th>address</th><th>product_name</th><th>brand</th><th>sales_quantity</th><th>sales_amount_rub</th><th>sales_cost_price</th></tr></thead>
+          <tbody>
+            <tr><td>2025</td><td>Январь</td><td>Дикси</td><td>п.Клетня</td><td>ул.Заозерная, д.24</td><td>СЕМЕЧКИ БАБКИНЫ СЕМЕЧКИ ЖАРЕННЫЕ 330Г</td><td>КДВ ГРУПП</td><td>12</td><td>1969.60</td><td>837.36</td></tr>
+            <tr><td>2025</td><td>Январь</td><td>Дикси</td><td>Клинцы</td><td>ул.Ворошилова, д.28</td><td>СЕМЕЧКИ БАБКИНЫ СЕМЕЧКИ ЖАРЕННЫЕ 330Г</td><td>КДВ ГРУПП</td><td>6</td><td>1018.51</td><td>418.69</td></tr>
+            <tr><td>2025</td><td>Январь</td><td>Дикси</td><td>Клинцы</td><td>ул.Советская, д.4</td><td>СЕМЕЧКИ БАБКИНЫ СЕМЕЧКИ ЖАРЕННЫЕ 330Г</td><td>КДВ ГРУПП</td><td>20</td><td>3174.75</td><td>1395.68</td></tr>
+            <tr><td>2025</td><td>Январь</td><td>Дикси</td><td>пгт.Ивот</td><td>ул.Ленина, д.1</td><td>СЕМЕЧКИ БАБКИНЫ СЕМЕЧКИ ЖАРЕННЫЕ 330Г</td><td>КДВ ГРУПП</td><td>11</td><td>1834.12</td><td>767.62</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Лента -->
+      <h4 style="margin: 32px 0 12px 0; color: var(--silver);">🛒 Лента — iceberg.lenta_silver.sales</h4>
+      <div class="mapping-table-wrap">
+        <table class="mapping-table" style="min-width: 1100px;">
+          <thead><tr><th>year</th><th>month</th><th>retail_chain</th><th>store_format</th><th>city_name</th><th>product_name</th><th>sales_quantity</th><th>sales_amount_rub</th><th>cost_price_rub</th></tr></thead>
+          <tbody>
+            <tr><td>2026</td><td>Апрель</td><td>Лента</td><td>Лента</td><td>Санкт-Петербург</td><td>Чипсы POMSTICKS Lorenz с солью 100г</td><td>129</td><td>10525.18</td><td>7521.97</td></tr>
+            <tr><td>2026</td><td>Апрель</td><td>Лента</td><td>Лента</td><td>Санкт-Петербург</td><td>Чипсы POMSTICKS сол смет/спец100г</td><td>91</td><td>7413.51</td><td>5268.70</td></tr>
+            <tr><td>2026</td><td>Апрель</td><td>Лента</td><td>Лента</td><td>Санкт-Петербург</td><td>Чипсы PRINGLES со вкусом паприки 165г</td><td>101</td><td>21101.21</td><td>15918.96</td></tr>
+            <tr><td>2026</td><td>Апрель</td><td>Лента</td><td>Лента</td><td>Санкт-Петербург</td><td>Чипсы PRINGLES со вкусом сыра и лука165г</td><td>114</td><td>23269.02</td><td>17622.44</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Магнит -->
+      <h4 style="margin: 32px 0 12px 0; color: var(--silver);">🟢 Магнит — iceberg.magnit_silver.sales</h4>
+      <div class="mapping-table-wrap">
+        <table class="mapping-table" style="min-width: 1100px;">
+          <thead><tr><th>year</th><th>month</th><th>retail_chain</th><th>city_name</th><th>address</th><th>product_name</th><th>brand</th><th>sales_quantity</th><th>sales_amount_rub</th></tr></thead>
+          <tbody>
+            <tr><td>2025</td><td>Январь</td><td>Магнит</td><td>Кунгур</td><td>Плехановский тракт ул, дом № зд. 21</td><td>ХРУСТEAM Багет Сухарики возд корол краб 60г</td><td>Хрустим</td><td>6</td><td>323.94</td></tr>
+            <tr><td>2025</td><td>Январь</td><td>Магнит</td><td>Кунгур</td><td>Плехановский тракт ул, дом № зд. 21</td><td>ОТ МАРТИНА Семечк белые подсолн с солью 100г</td><td>От Мартина</td><td>3</td><td>257.97</td></tr>
+            <tr><td>2025</td><td>Январь</td><td>Магнит</td><td>Кунгур</td><td>Плехановский тракт ул, дом № зд. 21</td><td>LAYS Из Печи Чипсы карт лисички в сметане 85г</td><td>Лейз из печи</td><td>4</td><td>455.96</td></tr>
+            <tr><td>2025</td><td>Январь</td><td>Магнит</td><td>Кунгур</td><td>Плехановский тракт ул, дом № зд. 21</td><td>ОТ МАРТИНА Семечки Подсолн с морск сол 100г</td><td>От Мартина</td><td>5</td><td>335.95</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Окей -->
+      <h4 style="margin: 32px 0 12px 0; color: var(--silver);">🅾️ О'кей — iceberg.okey_silver.sales</h4>
+      <div class="mapping-table-wrap">
+        <table class="mapping-table" style="min-width: 1200px;">
+          <thead><tr><th>year</th><th>month</th><th>retail_chain</th><th>city_name</th><th>product_name</th><th>brand</th><th>flavor</th><th>weight_grams</th><th>sales_quantity</th><th>sales_amount_rub</th></tr></thead>
+          <tbody>
+            <tr><td>2025</td><td>Июль</td><td>Окей</td><td>Астрахань</td><td>Бульба chips Чипсы из сырого картофеля со вкусом боровиков 75 г</td><td>Бульба chips</td><td>Боровики</td><td>75</td><td>1</td><td>99.99</td></tr>
+            <tr><td>2025</td><td>Июль</td><td>Окей</td><td>Астрахань</td><td>Бульба chips Чипсы из сырого картофеля со вкусом сметаны и сыра 75 г</td><td>Бульба chips</td><td>Сметана, сыр</td><td>75</td><td>8</td><td>799.92</td></tr>
+            <tr><td>2025</td><td>Июль</td><td>Окей</td><td>Астрахань</td><td>БРУТО Чипсы картофельные Сливочное масло и укроп,80г</td><td>Bruto</td><td>Масло, укроп</td><td>80</td><td>3</td><td>449.97</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Перекрёсток -->
+      <h4 style="margin: 32px 0 12px 0; color: var(--silver);">🔄 Перекрёсток — iceberg.perekrestok_silver.sales</h4>
+      <div class="mapping-table-wrap">
+        <table class="mapping-table" style="min-width: 1100px;">
+          <thead><tr><th>year</th><th>month</th><th>retail_chain</th><th>product_name</th><th>brand</th><th>flavor</th><th>weight_grams</th><th>sales_quantity</th><th>sales_amount_rub</th></tr></thead>
+          <tbody>
+            <tr><td>2024</td><td>Сентябрь</td><td>Перекресток</td><td>Savoursmiths Соль пустыни 150г</td><td>Savoursmiths</td><td>Соль</td><td>150</td><td>84</td><td>37699.30</td></tr>
+            <tr><td>2024</td><td>Сентябрь</td><td>Перекресток</td><td>PATTES Оригинальные 100г</td><td>PATTES</td><td>Оригинальные</td><td>100</td><td>75</td><td>12236.78</td></tr>
+            <tr><td>2024</td><td>Сентябрь</td><td>Перекресток</td><td>Бульба картошечка по-деревенски Утка с брусн. соусом 150г</td><td>Бульба картошечка по-деревенски</td><td>Утка и соус брусничный</td><td>150</td><td>22</td><td>2476.10</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Пятёрочка -->
+      <h4 style="margin: 32px 0 12px 0; color: var(--silver);">⭐ Пятёрочка — iceberg.pyaterochka_silver.sales</h4>
+      <div class="mapping-table-wrap">
+        <table class="mapping-table" style="min-width: 1100px;">
+          <thead><tr><th>year</th><th>month</th><th>retail_chain</th><th>product_name</th><th>brand</th><th>flavor</th><th>weight_grams</th><th>sales_quantity</th><th>sales_amount_rub</th></tr></thead>
+          <tbody>
+            <tr><td>2024</td><td>Сентябрь</td><td>Пятерочка</td><td>San Carlo Лайм и розовый перец 150 г</td><td>San Carlo</td><td>Лайм, перец</td><td>150</td><td>5</td><td>1482.90</td></tr>
+            <tr><td>2024</td><td>Сентябрь</td><td>Пятерочка</td><td>San Carlo Паприка 150 г</td><td>San Carlo</td><td>Паприка</td><td>150</td><td>1</td><td>230.65</td></tr>
+            <tr><td>2024</td><td>Сентябрь</td><td>Пятерочка</td><td>BON GIORNO Креветки в белом вине 80г</td><td>Bon Giorno</td><td>Креветки и вино</td><td>80</td><td>19</td><td>1988.48</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Красное и Белое -->
+      <h4 style="margin: 32px 0 12px 0; color: var(--silver);">🔴 Красное&Белое — iceberg.krasnoebeloe_silver.sales</h4>
+      <div class="mapping-table-wrap">
+        <table class="mapping-table" style="min-width: 900px;">
+          <thead><tr><th>year</th><th>month</th><th>retail_chain</th><th>product_name</th><th>quantity_shipped</th><th>revenue_rub</th><th>markup_rub</th></tr></thead>
+          <tbody>
+            <tr><td>2026</td><td>Март</td><td>Красное и Белое</td><td>"Чипсы картофельные ""Русская картошка"" со вкусом ""стейк рибай"" 80г*16"</td><td>8517</td><td>491851.43</td><td>236276.24</td></tr>
+            <tr><td>2026</td><td>Март</td><td>Красное и Белое</td><td>Чипсы Лэйс Нежный сыр с трюфелем 93гр*24</td><td>8146</td><td>1041601.84</td><td>373021.90</td></tr>
+            <tr><td>2026</td><td>Март</td><td>Красное и Белое</td><td>"Чипсы Московский картофель со вкусом ""Сладкий чили"" 130гр*16"</td><td>29800</td><td>3526011.50</td><td>1017576.60</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Верный -->
+      <h4 style="margin: 32px 0 12px 0; color: var(--silver);">✔️ Верный — iceberg.vernyi_silver.sales</h4>
+      <div class="mapping-table-wrap">
+        <table class="mapping-table" style="min-width: 1100px;">
+          <thead><tr><th>year</th><th>month</th><th>retail_chain</th><th>region_name</th><th>city_name</th><th>product_name</th><th>vendor</th><th>sales_quantity</th><th>sales_amount_rub</th></tr></thead>
+          <tbody>
+            <tr><td>2026</td><td>Апрель</td><td>Верный</td><td>Центральный</td><td>Тула</td><td>Чипсы Lay's Нежный сыр с трюфелем 93г</td><td>ПепсиКо Холдингс</td><td>3</td><td>449.97</td></tr>
+            <tr><td>2026</td><td>Апрель</td><td>Верный</td><td>Центральный</td><td>Красногорск</td><td>Чипсы Delicados Nachos оливки/паприка 150г</td><td>МИШН ФУДС СТУПИНО</td><td>3</td><td>329.97</td></tr>
+            <tr><td>2026</td><td>Апрель</td><td>Верный</td><td>Северо-Западный</td><td>Приозерск</td><td>Чипсы Lay's с солью 140г</td><td>ПепсиКо Холдингс</td><td>1</td><td>179.18</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- X5 (Батон/Хлеб Соль) -->
+      <h4 style="margin: 32px 0 12px 0; color: var(--silver);">🍞 X5 Group — iceberg.x5_silver.sales</h4>
+      <div class="mapping-table-wrap">
+        <table class="mapping-table" style="min-width: 1100px;">
+          <thead><tr><th>year</th><th>month</th><th>retail_chain</th><th>region_name</th><th>city_name</th><th>product_name</th><th>brand</th><th>sales_quantity</th><th>sales_amount_rub</th></tr></thead>
+          <tbody>
+            <tr><td>2026</td><td>Февраль</td><td>Батон</td><td>Красноярский край</td><td>Красноярск</td><td>LAYS Чипсы нат.карт.вк.мол.зел.лука 140г</td><td>LAY'S</td><td>19</td><td>3192.99</td></tr>
+            <tr><td>2026</td><td>Февраль</td><td>Хлеб Соль</td><td>Иркутская обл.</td><td>Иркутск</td><td>Чипсы банановые 300г</td><td>БЕЗ БРЕНДА</td><td>3</td><td>524.77</td></tr>
+            <tr><td>2026</td><td>Февраль</td><td>Батон</td><td>Красноярский край</td><td>Красноярск</td><td>BINGGRAE Чипсы КРАБ ЧИПСЫ хр.вк.краба80г</td><td>БЕЗ БРЕНДА</td><td>22</td><td>2539.86</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="arch-diagram-caption" style="margin-top: 16px;">📌 Все таблицы партиционированы по retail_chain / year / month. Данные нормализованы: приведены типы, переименованы колонки, рассчитаны средние цены и маржинальность.</div>
+    </div>
+  </section>
+
+  <!-- ─── GOLD ─────────────────────────────────── -->
+  <section id="gold">
+    <h2>Gold Layer — Единая витрина (OBT)</h2>
+    <p>11 Silver-таблиц склеиваются в единую плоскую таблицу (~14 млн строк) и обогащаются справочником товаров. Записывается в ClickHouse, доступна через Superset.</p>
+
+    <div class="layer-card layer-gold animate-in">
+      <div class="layer-header">
+        <span class="layer-pill pill-gold">GOLD</span>
+        <span class="layer-title">Spark → ClickHouse (sales_mart) — 2 DAG-а</span>
+      </div>
+
+      <div class="transform-list">
+        <div class="transform-item"><span class="transform-icon">🔗</span> <strong>UNION ALL</strong>: 11 Silver-таблиц → витрина 42 колонки, ~14 млн строк</div>
+        <div class="transform-item"><span class="transform-icon">📖</span> <strong>LEFT JOIN</strong> со справочником <code style="font-family:var(--mono);font-size:12px;color:#d4a843">product_mapping</code></div>
+        <div class="transform-item"><span class="transform-icon">🚫</span> <strong>Фильтрация</strong>: <code style="font-family:var(--mono);font-size:12px;color:#e05555">brand_manual = 'Не чипсы'</code> → исключаются</div>
+        <div class="transform-item"><span class="transform-icon">⚡</span> <strong>Параллельная запись</strong>: 4 партиции × 50K batch в ClickHouse</div>
+      </div>
+
+      <div class="io-row">
+        <div class="io-box">
+          <div class="io-box-label in">📨 Входные данные</div>
+          <ul class="io-list">
+            <li>11 Iceberg Silver-таблиц</li>
+            <li>Справочник product_mapping (CH)</li>
+          </ul>
+        </div>
+        <div class="io-box">
+          <div class="io-box-label out">📤 Выходные данные</div>
+          <ul class="io-list">
+            <li>ClickHouse: default.sales_mart</li>
+            <li>42 колонки × ~14 млн строк</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── СПРАВОЧНИК ──────────────────────────── -->
+  <section id="mapping">
+    <h2>Справочник товаров — product_mapping</h2>
+    <p>Справочник в ClickHouse с ручной разметкой товаров.</p>
+
+    <div class="mapping-section animate-in">
+      <div class="mapping-header">
+        <div class="mapping-icon">📖</div>
+        <div>
+          <div class="mapping-title">product_mapping</div>
+          <div class="mapping-desc">ClickHouse · default · MergeTree · ORDER BY original_name</div>
+        </div>
+      </div>
+
+      <h3>Структура таблицы</h3>
+      <div class="mapping-table-wrap">
+        <table class="mapping-table">
+          <thead><tr><th>Колонка</th><th>Тип</th><th>Описание</th></tr></thead>
+          <tbody>
+            <tr onclick="openModal('col-original-name')"><td>original_name</td><td><span class="type">String</span></td><td>Оригинальное название товара</td></tr>
+            <tr onclick="openModal('col-brand-manual')"><td>brand_manual</td><td><span class="type">String</span></td><td>Бренд (ручная разметка)</td></tr>
+            <tr onclick="openModal('col-chip-type')"><td>chip_type_manual</td><td><span class="type">String</span></td><td>Тип чипсов</td></tr>
+            <tr onclick="openModal('col-package')"><td>package_manual</td><td><span class="type">String</span></td><td>Тип упаковки</td></tr>
+            <tr onclick="openModal('col-flavor')"><td>flavor_manual</td><td><span class="type">String</span></td><td>Вкус</td></tr>
+            <tr onclick="openModal('col-weight')"><td>weight_manual</td><td><span class="type">Float64</span></td><td>Вес в граммах</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Примеры записей</h3>
+      <div class="mapping-table-wrap">
+        <table class="mapping-table">
+          <thead><tr><th>original_name</th><th>brand</th><th>chip_type</th><th>package</th><th>flavor</th><th>weight</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Картофель хруст. Golden Life "Со вкусом Аргентинского стейка…" 90г</td>
+              <td class="td-brand">Golden Life</td><td class="td-chip">Картофельные чипсы</td>
+              <td class="td-pkg">Пакет</td><td class="td-flav">Стейк</td><td class="td-weight">90</td>
+            </tr>
+            <tr>
+              <td>Картофельные чипсы "Оригинальные" в тубе 160г (ОКЕЙ)</td>
+              <td class="td-brand">О'кей</td><td class="td-chip">Картофельные чипсы</td>
+              <td class="td-pkg">Туба</td><td class="td-flav">Соль</td><td class="td-weight">160</td>
+            </tr>
+            <tr>
+              <td>СНЕКИ КАРТ "CARAMBA" КРАБ 160Г</td>
+              <td class="td-brand">Carambas</td><td class="td-chip">Картофельные чипсы</td>
+              <td class="td-null">—</td><td class="td-null">—</td><td class="td-null">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── BUILD MART ──────────────────────────── -->
+  <section id="build-mart">
+    <h2>Build Mart — Сборка единой витрины</h2>
+    <p>Ключевой скрипт Gold-слоя. Паттерн <strong>One Big Table (OBT)</strong> по Кимболу. Итоговая витрина: <strong>~14 млн строк</strong>.</p>
+
+    <div class="obt-card animate-in">
+      <div class="obt-header">
+        <div class="obt-icon">⭐</div>
+        <div>
+          <div class="obt-title">sales_mart — One Big Table</div>
+          <div class="obt-subtitle">ClickHouse · 42 columns · ~14M rows · Kimball OBT</div>
+        </div>
+      </div>
+
+      <div class="obt-flow">
+        <div class="obt-flow-step" onclick="openModal('obt-step-silver')">11 Silver Iceberg</div>
+        <span class="obt-flow-arrow">→</span>
+        <div class="obt-flow-step" onclick="openModal('obt-step-unify')">Унификация (select_*)</div>
+        <span class="obt-flow-arrow">→</span>
+        <div class="obt-flow-step" onclick="openModal('obt-step-union')">UNION ALL</div>
+        <span class="obt-flow-arrow">→</span>
+        <div class="obt-flow-step" onclick="openModal('obt-step-join')">LEFT JOIN mapping</div>
+        <span class="obt-flow-arrow">→</span>
+        <div class="obt-flow-step" onclick="openModal('obt-step-filter')">Фильтрация</div>
+        <span class="obt-flow-arrow">→</span>
+        <div class="obt-flow-step" onclick="openModal('obt-step-write')" style="border-color:var(--gold);color:var(--gold);">ClickHouse ⚡</div>
+      </div>
+
+      <!-- LIVE DATA PREVIEW -->
+      <div class="live-data-section">
+        <div class="live-data-header">
+          <div class="live-data-dot"></div>
+          <span>SELECT * FROM sales_mart WHERE year = 2026 ORDER BY date DESC LIMIT 3</span>
+        </div>
+        <div class="live-data-wrap">
+          <table class="live-data-table">
+            <thead>
+              <tr><th>date</th><th>year</th><th>month</th><th>retail_chain</th><th>region</th><th>city</th><th>product_name</th><th>brand</th><th>flavor</th><th>weight</th><th>chip_type</th><th>package</th><th>qty</th><th>amount ₽</th><th>cost ₽</th><th>file_name</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>2026-04-01</td><td>2026</td><td>Апрель</td><td class="cell-chain">Верный</td><td>Центральный</td><td>Москва</td><td>Чипсы Lay's Сыр 70г</td><td class="cell-brand">Lay's</td><td>Сыр</td><td>70</td><td>Картофельные чипсы</td><td>Пакет</td><td>7</td><td class="cell-amount">699.93</td><td class="cell-amount">613.41</td><td>vernyi_april_2026</td></tr>
+              <tr><td>2026-04-01</td><td>2026</td><td>Апрель</td><td class="cell-chain">Верный</td><td>Приволжский</td><td>Зеленодольск</td><td>Чипсы Pomsticks соломка с солью 100г</td><td class="cell-brand">Lorenz</td><td>Соль</td><td>100</td><td>Картофельные чипсы</td><td>Пакет</td><td>4</td><td class="cell-amount">439.96</td><td class="cell-amount">378.64</td><td>vernyi_april_2026</td></tr>
+              <tr><td>2026-04-01</td><td>2026</td><td>Апрель</td><td class="cell-chain">Верный</td><td>Уральский</td><td>Асбест</td><td>Чипсы Lay's Краб 70г</td><td class="cell-brand">Lay's</td><td>Краб</td><td>70</td><td>Картофельные чипсы</td><td>Пакет</td><td>3</td><td class="cell-amount">299.97</td><td class="cell-amount">262.89</td><td>vernyi_april_2026</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── PERFORMANCE ─────────────────────────── -->
+  <section id="performance">
+    <h2>Производительность</h2>
+    <p>Реальные измеренные тайминги полной прогрузки одного «среднего» батча данных (~2,5 ГБ от одной сети).</p>
+
+    <div class="perf-card animate-in">
+      <div class="perf-header">
+        <div class="perf-icon-big">⚡</div>
+        <div>
+          <div class="perf-title">~2 минуты на 2,5 ГБ</div>
+          <div class="perf-subtitle">Archive → S3 (Bronze) → Silver Iceberg append</div>
+        </div>
+      </div>
+
+      <div class="perf-stages">
+        <div class="perf-stage" onclick="openModal('perf-stage-archive')">
+          <div class="perf-stage-name">Archive ingest</div>
+          <div class="perf-stage-value">~15 c</div>
+          <div class="perf-stage-meta">Чтение CSV из /data/</div>
+        </div>
+        <div class="perf-stage" onclick="openModal('perf-stage-s3')">
+          <div class="perf-stage-name">S3 upload</div>
+          <div class="perf-stage-value">~25 c</div>
+          <div class="perf-stage-meta">→ MinIO bucket «raw»</div>
+        </div>
+        <div class="perf-stage" onclick="openModal('perf-stage-spark')">
+          <div class="perf-stage-name">Spark processing</div>
+          <div class="perf-stage-value">~60 c</div>
+          <div class="perf-stage-meta">Маппинг + типизация</div>
+        </div>
+        <div class="perf-stage" onclick="openModal('perf-stage-iceberg')">
+          <div class="perf-stage-name">Iceberg append</div>
+          <div class="perf-stage-value">~20 c</div>
+          <div class="perf-stage-meta">Запись в Silver</div>
+        </div>
+      </div>
+
+      <div class="perf-summary">
+        Итого: <strong>~120 секунд (2 минуты)</strong> на полный цикл одной сети объёмом 2,5 ГБ. Bottleneck — Spark-преобразования (примерно 50% времени).
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── DAGs ─────────────────────────────────── -->
+  <section id="dag">
+    <h2>Airflow DAGs — 13 пайплайнов</h2>
+    <p>13 DAG-ов: <strong>11 для сетей</strong> (Bronze + Silver) и <strong>2 для витрин</strong> (Gold). Все оснащены Telegram-уведомлениями.</p>
+
+    <h3>11 DAG-ов — ETL по сетям</h3>
+    <div class="dag-tasks">
+      <div class="dag-task" onclick="openModal('task-sensor')">
+        <span class="dag-task-num">Task 1</span>
+        <div class="dag-task-body">
+          <h4>wait_for_files (FileSensor)</h4>
+          <p>Ожидает появления файлов <code style="font-family:var(--mono);font-size:12px">/opt/airflow/data/{chain}*</code>.</p>
+        </div>
+      </div>
+      <div class="dag-arrow">↓</div>
+      <div class="dag-task" onclick="openModal('task-s3')">
+        <span class="dag-task-num">Task 2</span>
+        <div class="dag-task-body">
+          <h4>load_to_s3_raw</h4>
+          <p>Загружает CSV в S3 bucket «raw» через S3Hook, перемещает в /archive/.</p>
+        </div>
+      </div>
+      <div class="dag-arrow">↓</div>
+      <div class="dag-task" onclick="openModal('task-spark')">
+        <span class="dag-task-num">Task 3</span>
+        <div class="dag-task-body">
+          <h4>spark_processing (SparkSubmitOperator)</h4>
+          <p>Запускает <code style="font-family:var(--mono);font-size:12px">jobs/{chain}_spark_processing.py</code>.</p>
+        </div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:36px;">2 DAG-а — Витрины</h3>
+    <div class="dag-tasks">
+      <div class="dag-task" onclick="openModal('dag-mapping')">
+        <span class="dag-task-num">DAG 12</span>
+        <div class="dag-task-body">
+          <h4>update_product_mapping</h4>
+          <p>Ежедневно 04:00. Spark → собирает уникальные product_name → INSERT новых в ClickHouse.</p>
+        </div>
+      </div>
+      <div class="dag-arrow">↓ (запускается после)</div>
+      <div class="dag-task" onclick="openModal('dag-mart')">
+        <span class="dag-task-num">DAG 13</span>
+        <div class="dag-task-body">
+          <h4>build_sales_mart</h4>
+          <p>Ежедневно 05:00. Spark → UNION 11 Silver + JOIN mapping → TRUNCATE + INSERT в ClickHouse.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── MONITORING ────────────────────────────── -->
+  <section id="monitoring">
+    <h2>Мониторинг и качество</h2>
+
+    <div class="monitor-grid">
+      <div class="monitor-card animate-in" onclick="openModal('mon-telegram')">
+        <h4>📲 Telegram Alerts <span class="monitor-status status-live">LIVE</span></h4>
+        <p>Все 13 DAG-ов покрыты. Уведомления on_success и on_failure через Bot API.</p>
+      </div>
+      <div class="monitor-card animate-in" onclick="openModal('mon-superset')">
+        <h4>📊 Apache Superset <span class="monitor-status status-live">LIVE</span></h4>
+        <p>Дашборды на ClickHouse (sales_mart). Продажи, бренды, регионы, маржинальность.</p>
+      </div>
+      <div class="monitor-card animate-in" onclick="openModal('mon-grafana')">
+        <h4>📈 Grafana <span class="monitor-status status-wip">WIP</span></h4>
+        <p>Prometheus + Grafana задеплоены. cAdvisor, node-exporter, clickhouse-exporter собирают метрики.</p>
+      </div>
+      <div class="monitor-card animate-in" onclick="openModal('mon-soda')">
+        <h4>🔎 Soda / GE <span class="monitor-status status-planned">PLANNED</span></h4>
+        <p>Проверки NULL, дубли, диапазоны. Интеграция в DAG после загрузки.</p>
+      </div>
+    </div>
+
+    <div class="tg-bot-card" onclick="openModal('tg-bot')">
+      <div class="tg-bot-icon">🤖</div>
+      <div>
+        <strong style="font-family:var(--display); color:var(--text);">Telegram-бот для алертов</strong>
+        <div class="tg-bot-meta">Никнейм: <strong>@DAG_Kaftal_bot</strong> · отправляет статус всех 13 DAG-ов</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── TODO ──────────────────────────────────── -->
+  <section id="todo">
+    <h2>Roadmap</h2>
+    <ul class="todo-list">
+      <li><span class="todo-dot done"></span>Yandex Cloud VM — 8 vCPU / 32 GB / 160 GB SSD</li>
+      <li><span class="todo-dot done"></span>Docker Compose — 14 контейнеров</li>
+      <li><span class="todo-dot done"></span>Bronze Layer — CSV → S3 (11 DAG-ов)</li>
+      <li><span class="todo-dot done"></span>Silver Layer — Spark + Apache Iceberg (11 таблиц)</li>
+      <li><span class="todo-dot done"></span>Справочник товаров (product_mapping)</li>
+      <li><span class="todo-dot done"></span>Gold Layer — build_mart OBT → ClickHouse (~14 млн строк)</li>
+      <li><span class="todo-dot done"></span>Superset — дашборды на ClickHouse</li>
+      <li><span class="todo-dot done"></span>Trino для ad-hoc аналитики</li>
+      <li><span class="todo-dot done"></span>Telegram Alerts (@DAG_Kaftal_bot) — все 13 DAG-ов покрыты</li>
+      <li><span class="todo-dot done"></span>Prometheus + cAdvisor + node-exporter</li>
+      <li><span class="todo-dot done"></span>Производительность: 2,5 ГБ за ~2 минуты</li>
+      <li><span class="todo-dot"></span>Grafana — дашборды мониторинга (допиливается)</li>
+      <li><span class="todo-dot"></span>Incremental Load (сейчас TRUNCATE + INSERT)</li>
+      <li><span class="todo-dot"></span>Soda / Great Expectations — data quality</li>
+      <li><span class="todo-dot"></span>Оптимизация Spark jobs</li>
+      <li><span class="todo-dot"></span>CI/CD — GitHub Actions</li>
+    </ul>
+  </section>
+
+</main>
+</div>
+
+<script>
+  // ══════════════════════════════════════════════════════════
+  // MODAL DATA — расширенные описания
+  // ══════════════════════════════════════════════════════════
+  const MODALS = {
+
+    // ── DATA SCALE ──
+    'data-scale': {
+      icon: '📦', iconBg: '#1a1608', iconColor: '#d4a843',
+      title: 'Объём данных', subtitle: 'Текущее состояние пайплайна',
+      body: `
+        <div class="modal-section">
+          <h5>📊 Метрики</h5>
+          <dl class="modal-kv">
+          <dt>Сырые CSV</dt><dd>~19 ГБ</dd>
+          <dt>Строк в витрине</dt><dd>~14 000 000</dd>
+          <dt>Колонок в витрине</dt><dd>42</dd>
+          <dt>Iceberg таблиц</dt><dd>11 (по сетям)</dd>
+          <dt>DAG-ов</dt><dd>13 (11 ETL + 2 mart)</dd>
+          <dt>Сетей</dt><dd>11</dd>
+          </dl>
+        </div>
+        <div class="modal-section">
+          <h5>⚡ Почему так быстро</h5>
+          <div class="modal-bullet">ClickHouse хранит данные в колоночном формате — простые SQL-запросы по агрегации работают за миллисекунды.</div>
+          <div class="modal-bullet">Iceberg-таблицы партиционированы по retail_chain/year/month — Spark читает только нужные файлы.</div>
+          <div class="modal-bullet">Параллельная вставка в ClickHouse через несколько Spark-партиций ускоряет запись в 4 раза.</div>
+        </div>
+        <div class="modal-section">
+          <h5>📈 Прогноз роста</h5>
+          <p>При сохранении объёма поступления данных от 11 сетей, через 12 месяцев объём вырастет до ~50 ГБ исходных данных и ~40 млн строк в OBT. Текущей инфраструктуры с запасом хватит на 2–3 года эксплуатации.</p>
+        </div>
+      `
+    },
+
+    // ── PERFORMANCE ──
+    'perf-summary': {
+      icon: '⚡', iconBg: '#0d1f17', iconColor: '#4db88a',
+      title: 'Производительность пайплайна', subtitle: '2,5 ГБ → Silver за ~2 минуты',
+      body: `
+        <div class="modal-section">
+          <h5>⏱ Замеры на «среднем» батче</h5>
+          <p>Для одной сети с объёмом данных 2,5 ГБ полный цикл от появления файла в /data/ до записи в Iceberg занимает примерно 2 минуты.</p>
+          <dl class="modal-kv">
+          <dt>Архив → чтение</dt><dd>~15 с</dd>
+          <dt>S3 upload</dt><dd>~25 с</dd>
+          <dt>Spark processing</dt><dd>~60 с</dd>
+          <dt>Iceberg append</dt><dd>~20 с</dd>
+          <dt><strong>Итого</strong></dt><dd><strong>~120 с</strong></dd>
+          </dl>
+        </div>
+        <div class="modal-section">
+          <h5>🔍 Что узкое место</h5>
+          <div class="modal-bullet">Spark processing занимает ~50% времени — основная работа: маппинг колонок, типизация, расчёты sales_amount/cost.</div>
+          <div class="modal-bullet">S3 upload — 20% времени (зависит от пропускной способности сети).</div>
+          <div class="modal-bullet">Iceberg append быстрый благодаря партиционированию и оптимизации записи.</div>
+        </div>
+        <div class="modal-section">
+          <h5>🚀 Как ускорить дальше</h5>
+          <div class="modal-bullet">Увеличить число cores у Spark worker (сейчас 2 → можно до 4 на текущей VM).</div>
+          <div class="modal-bullet">Использовать Spark broadcast joins для мелких справочников.</div>
+          <div class="modal-bullet">Перейти на Incremental Load вместо полной перезаписи витрины.</div>
+        </div>
+      `
+    },
+
+    'perf-stage-archive': {
+      icon: '📂', iconBg: '#0d1f17', iconColor: '#4db88a',
+      title: 'Archive ingest · ~15 секунд', subtitle: 'Чтение CSV из /opt/airflow/data/',
+      body: `
+        <p>FileSensor обнаруживает файлы, после чего PythonOperator открывает их для чтения. Время зависит от размера и количества файлов.</p>
+        <dl class="modal-kv">
+        <dt>Объём</dt><dd>2,5 ГБ</dd>
+        <dt>Скорость</dt><dd>~165 МБ/с (локальный SSD)</dd>
+        <dt>Операция</dt><dd>os.listdir + open()</dd>
+        </dl>
+        <p>Файлы остаются в архиве /opt/airflow/archive/ после успешной обработки.</p>
+      `
+    },
+    'perf-stage-s3': {
+      icon: '🪣', iconBg: '#1f0e0e', iconColor: '#e05555',
+      title: 'S3 Upload · ~25 секунд', subtitle: 'Загрузка в MinIO bucket «raw»',
+      body: `
+        <p>S3Hook (boto3 под капотом) загружает CSV-файлы в локальное S3-хранилище MinIO. Это сетевая операция внутри одного хоста.</p>
+        <dl class="modal-kv">
+        <dt>Объём</dt><dd>2,5 ГБ</dd>
+        <dt>Скорость</dt><dd>~100 МБ/с (MinIO + Docker bridge)</dd>
+        <dt>Bucket</dt><dd>raw</dd>
+        <dt>Параллелизм</dt><dd>1 (последовательная загрузка файлов)</dd>
+        </dl>
+      `
+    },
+    'perf-stage-spark': {
+      icon: '🔥', iconBg: '#1e1510', iconColor: '#c87941',
+      title: 'Spark processing · ~60 секунд', subtitle: 'Маппинг + типизация + расчёты',
+      body: `
+        <p>SparkSubmitOperator запускает PySpark-скрипт. Это самая ресурсоёмкая фаза — ~50% времени всего цикла.</p>
+        <dl class="modal-kv">
+        <dt>Cores</dt><dd>2 (spark-worker)</dd>
+        <dt>Memory</dt><dd>2 ГБ</dd>
+        <dt>AQE</dt><dd>Enabled (Adaptive Query Execution)</dd>
+        </dl>
+        <div class="modal-section">
+          <h5>Что происходит</h5>
+          <div class="modal-bullet">Чтение CSV из S3 → DataFrame</div>
+          <div class="modal-bullet">Renaming колонок (COLUMN_RENAME_MAP)</div>
+          <div class="modal-bullet">Парсинг месяца/года из имени файла</div>
+          <div class="modal-bullet">Нормализация числовых полей (запятая → точка)</div>
+          <div class="modal-bullet">Расчёт sales_amount/cost_price</div>
+          <div class="modal-bullet">Финальная типизация по SILVER_TYPES</div>
+        </div>
+      `
+    },
+    'perf-stage-iceberg': {
+      icon: '🧊', iconBg: '#101820', iconColor: '#8ab4d4',
+      title: 'Iceberg append · ~20 секунд', subtitle: 'Запись в Silver-таблицу',
+      body: `
+        <p>Spark пишет DataFrame в Iceberg-таблицу методом <code>writeTo().append()</code> с автоматическим партиционированием.</p>
+        <dl class="modal-kv">
+        <dt>Партиции</dt><dd>retail_chain / year / month</dd>
+        <dt>Format</dt><dd>Parquet (Iceberg внутри)</dd>
+        <dt>Каталог</dt><dd>REST Catalog (iceberg-rest:8181)</dd>
+        <dt>Storage</dt><dd>MinIO (s3://warehouse)</dd>
+        </dl>
+        <p>Перед записью выполняется проверка <code>SELECT COUNT WHERE file_name = '...'</code> — защита от повторной загрузки того же файла.</p>
+      `
+    },
+
+    // ── Yandex Cloud ──
+    'yc-vm': {
+      icon: 'Y', iconBg: '#fc3f1d', iconColor: 'white',
+      title: 'Yandex Cloud · Compute VM', subtitle: 'Виртуальная машина',
+      body: `
+        <div class="modal-section">
+          <h5>🖥 Конфигурация</h5>
+          <dl class="modal-kv">
+          <dt>Платформа</dt><dd>Intel Ice Lake</dd>
+          <dt>vCPU</dt><dd>8 (100% гарантированно)</dd>
+          <dt>RAM</dt><dd>32 ГБ</dd>
+          <dt>Диск</dt><dd>160 ГБ SSD</dd>
+          <dt>OS</dt><dd>Ubuntu 24.04 LTS</dd>
+          <dt>Регион</dt><dd>ru-central1</dd>
+          <dt>Прерываемая</dt><dd>Да (для экономии)</dd>
+          </dl>
+        </div>
+        <div class="modal-section">
+          <h5>💰 Стоимость</h5>
+          <p><strong>~6 350 ₽/мес</strong> · vCPU: ~1 960 ₽ · RAM: ~1 910 ₽ · SSD: ~2 290 ₽ · Public IP: ~190 ₽</p>
+        </div>
+        <div class="modal-section">
+          <h5>📝 Почему прерываемая ВМ</h5>
+          <div class="modal-bullet">Стоимость в 2-3 раза дешевле обычной ВМ.</div>
+          <div class="modal-bullet">Yandex Cloud может остановить её в любой момент (максимум через 24 часа).</div>
+          <div class="modal-bullet">Подходит для batch-обработки данных, где допустим перезапуск.</div>
+          <div class="modal-bullet">Все данные на диске сохраняются — после рестарта продолжаем работать.</div>
+        </div>
+      `
+    },
+    'yc-cpu': {
+      icon: '🧠', iconBg: '#1f0d08', iconColor: '#fc3f1d',
+      title: 'CPU · 8 vCPU Intel Ice Lake', subtitle: 'Xeon Scalable 3rd Gen',
+      body: `
+        <p>8 виртуальных CPU на платформе Intel Ice Lake (Xeon Scalable 3rd Gen). 100% гарантированная доля производительности.</p>
+        <div class="modal-section">
+          <h5>📊 Распределение нагрузки</h5>
+          <div class="modal-bullet">Spark master + worker: ~2 cores</div>
+          <div class="modal-bullet">ClickHouse: ~2 cores (под запросы)</div>
+          <div class="modal-bullet">Airflow scheduler + webserver: ~1 core</div>
+          <div class="modal-bullet">Прочие сервисы: ~3 cores</div>
+        </div>
+      `
+    },
+    'yc-ram': {
+      icon: '💾', iconBg: '#1f0d08', iconColor: '#fc3f1d',
+      title: 'RAM · 32 ГБ DDR4 ECC', subtitle: 'Распределение между сервисами',
+      body: `
+        <p>32 ГБ оперативной памяти распределены между всеми контейнерами стека:</p>
+        <dl class="modal-kv">
+        <dt>ClickHouse</dt><dd>~8 ГБ</dd>
+        <dt>Spark (master+worker)</dt><dd>~6 ГБ</dd>
+        <dt>Airflow + Postgres</dt><dd>~4 ГБ</dd>
+        <dt>Superset</dt><dd>~2 ГБ</dd>
+        <dt>Trino</dt><dd>~2 ГБ</dd>
+        <dt>Prometheus + Grafana</dt><dd>~2 ГБ</dd>
+        <dt>MinIO + остальные</dt><dd>~4 ГБ</dd>
+        <dt>OS + Docker overhead</dt><dd>~4 ГБ</dd>
+        </dl>
+      `
+    },
+    'yc-disk': {
+      icon: '💿', iconBg: '#1f0d08', iconColor: '#fc3f1d',
+      title: 'Disk · 160 ГБ Network SSD', subtitle: 'Сетевое SSD-хранилище',
+      body: `
+        <p>Быстрый сетевой SSD-диск Yandex Cloud. Хранит все Docker volumes:</p>
+        <dl class="modal-kv">
+        <dt>MinIO data</dt><dd>~25 ГБ (raw + warehouse)</dd>
+        <dt>ClickHouse data</dt><dd>~8 ГБ (sales_mart + mapping)</dd>
+        <dt>Postgres data</dt><dd>~2 ГБ (метабаза Airflow)</dd>
+        <dt>Prometheus TSDB</dt><dd>~5 ГБ (метрики)</dd>
+        <dt>Архивы CSV</dt><dd>~15 ГБ (исходники)</dd>
+        <dt>Docker images + logs</dt><dd>~20 ГБ</dd>
+        <dt><strong>Свободно</strong></dt><dd><strong>~85 ГБ</strong></dd>
+        </dl>
+      `
+    },
+    'yc-os': {
+      icon: '🐧', iconBg: '#1f0d08', iconColor: '#fc3f1d',
+      title: 'Ubuntu 24.04 LTS', subtitle: 'Noble Numbat · LTS до 2029',
+      body: `
+        <p>Долгосрочная поддержка до 2029 года. Образ из Yandex Cloud Marketplace.</p>
+        <div class="modal-section">
+          <h5>📦 Установлено</h5>
+          <div class="modal-bullet">Docker 24.x + Docker Compose v2</div>
+          <div class="modal-bullet">Python 3.12</div>
+          <div class="modal-bullet">curl, wget, htop, vim, git</div>
+          <div class="modal-bullet">SSH (только по ключу)</div>
+        </div>
+      `
+    },
+    'yc-zone': {
+      icon: '🌍', iconBg: '#1f0d08', iconColor: '#fc3f1d',
+      title: 'Регион ru-central1', subtitle: 'Yandex Cloud · Центральная Россия',
+      body: `
+        <p>Дата-центр Yandex Cloud в Центральной России.</p>
+        <div class="modal-section">
+          <h5>⚡ Преимущества</h5>
+          <div class="modal-bullet">Низкая задержка для пользователей из РФ (типично 5–30 мс)</div>
+          <div class="modal-bullet">Соответствие 152-ФЗ (хранение персональных данных)</div>
+          <div class="modal-bullet">Высокая доступность и резервирование</div>
+        </div>
+      `
+    },
+    'yc-price': {
+      icon: '💰', iconBg: '#1f0d08', iconColor: '#fc3f1d',
+      title: 'Стоимость ~6 350 ₽/мес', subtitle: 'Декомпозиция платежа',
+      body: `
+        <dl class="modal-kv">
+        <dt>vCPU (Ice Lake)</dt><dd>~1 960 ₽</dd>
+        <dt>RAM</dt><dd>~1 910 ₽</dd>
+        <dt>SSD-диск</dt><dd>~2 290 ₽</dd>
+        <dt>Public IP</dt><dd>~190 ₽</dd>
+        <dt><strong>Итого</strong></dt><dd><strong>~6 350 ₽/мес</strong></dd>
+        </dl>
+        <div class="modal-section">
+          <h5>💡 Тарификация</h5>
+          <p>Использован тариф прерываемой ВМ (со скидкой). Free tier eligible (часть ресурсов бесплатно по программе Yandex Cloud).</p>
+        </div>
+      `
+    },
+
+    // ── Docker Containers ──
+    'docker-airflow': {
+      icon: '🌊', iconBg: '#1c2348', iconColor: '#5b7ef5',
+      title: 'airflow', subtitle: 'Apache Airflow · Оркестрация',
+      body: `
+        <p>Главный оркестратор. Выполняет все 13 DAG-ов, рендерит UI, управляет планировщиком.</p>
+        <div class="modal-section">
+          <h5>⚙️ Конфигурация</h5>
+          <dl class="modal-kv">
+          <dt>Build</dt><dd>Custom Dockerfile</dd>
+          <dt>Port</dt><dd>8080 (Web UI)</dd>
+          <dt>Executor</dt><dd>LocalExecutor</dd>
+          <dt>Метабаза</dt><dd>PostgreSQL (postgres:5432)</dd>
+          </dl>
+        </div>
+        <div class="modal-section">
+          <h5>📁 Volumes</h5>
+          <div class="modal-bullet">dags/ — все DAG-файлы (13 штук)</div>
+          <div class="modal-bullet">logs/ — логи выполнения задач</div>
+          <div class="modal-bullet">jobs/ — Python-скрипты для Spark</div>
+          <div class="modal-bullet">data/ — входящие CSV-файлы</div>
+          <div class="modal-bullet">archive/ — обработанные файлы</div>
+        </div>
+      `
+    },
+    'docker-postgres': {
+      icon: '🐘', iconBg: '#1a1028', iconColor: '#c39af0',
+      title: 'postgres', subtitle: 'PostgreSQL 16 · Метабаза Airflow',
+      body: `
+        <p>Хранит DAG runs, task instances, variables, connections, XCom, логи задач.</p>
+        <dl class="modal-kv">
+        <dt>Image</dt><dd>postgres:16</dd>
+        <dt>Port</dt><dd>5433 (external) → 5432</dd>
+        <dt>DB</dt><dd>airflow</dd>
+        <dt>Volume</dt><dd>postgres-db-volume (persistent)</dd>
+        <dt>Healthcheck</dt><dd>pg_isready (каждые 90s)</dd>
+        </dl>
+      `
+    },
+    'docker-minio': {
+      icon: '🪣', iconBg: '#1f0e0e', iconColor: '#e05555',
+      title: 'minio', subtitle: 'S3-совместимое хранилище',
+      body: `
+        <p>Локальный S3. Полная совместимость с AWS S3 API, работает через boto3.</p>
+        <div class="modal-section">
+          <h5>📦 Buckets</h5>
+          <div class="modal-bullet"><strong>raw</strong> — сырые CSV от 11 сетей</div>
+          <div class="modal-bullet"><strong>warehouse</strong> — Iceberg-таблицы (Parquet)</div>
+        </div>
+        <dl class="modal-kv">
+        <dt>Image</dt><dd>minio/minio:latest</dd>
+        <dt>API</dt><dd>9000 (для boto3 и Spark)</dd>
+        <dt>UI</dt><dd>9001 (веб-консоль)</dd>
+        <dt>Volume</dt><dd>minio-data</dd>
+        </dl>
+      `
+    },
+    'docker-spark-master': {
+      icon: '🔥', iconBg: '#1e1510', iconColor: '#c87941',
+      title: 'spark-master', subtitle: 'Apache Spark 3.5.1 · Coordinator',
+      body: `
+        <p>Координатор Spark кластера. Принимает spark-submit от Airflow, распределяет задачи между воркерами, управляет ресурсами.</p>
+        <dl class="modal-kv">
+        <dt>Image</dt><dd>apache/spark:3.5.1-scala2.12-java17-python3</dd>
+        <dt>Master UI</dt><dd>8082 (внешний)</dd>
+        <dt>RPC</dt><dd>7077 (внутри Docker)</dd>
+        <dt>Volumes</dt><dd>spark-jobs, data, spark-jars</dd>
+        </dl>
+      `
+    },
+    'docker-spark-worker': {
+      icon: '⚙️', iconBg: '#1e1510', iconColor: '#c87941',
+      title: 'spark-worker', subtitle: 'Spark Executor · Custom Dockerfile',
+      body: `
+        <p>Воркер Spark, выполняющий задачи (transformations + actions). Подключается к master по spark://spark-master:7077.</p>
+        <dl class="modal-kv">
+        <dt>Build</dt><dd>Custom Dockerfile.spark</dd>
+        <dt>Cores</dt><dd>2</dd>
+        <dt>Memory</dt><dd>2 ГБ</dd>
+        </dl>
+        <div class="modal-section">
+          <h5>📦 Кастомные зависимости в Dockerfile</h5>
+          <div class="modal-bullet">iceberg-spark-runtime + iceberg-aws-bundle</div>
+          <div class="modal-bullet">hadoop-aws + aws-java-sdk-bundle</div>
+          <div class="modal-bullet">clickhouse_connect (для записи в CH)</div>
+          <div class="modal-bullet">boto3, pandas (для удобства)</div>
+        </div>
+      `
+    },
+    'docker-iceberg': {
+      icon: '🧊', iconBg: '#101820', iconColor: '#8ab4d4',
+      title: 'iceberg-rest', subtitle: 'Iceberg REST Catalog',
+      body: `
+        <p>REST-каталог Iceberg. Управляет метаданными таблиц (schema, partitions, snapshots, manifest files).</p>
+        <dl class="modal-kv">
+        <dt>Image</dt><dd>tabulario/iceberg-rest:latest</dd>
+        <dt>Port</dt><dd>8181</dd>
+        <dt>Warehouse</dt><dd>s3://warehouse/</dd>
+        <dt>IO</dt><dd>S3FileIO (через MinIO)</dd>
+        </dl>
+        <div class="modal-section">
+          <h5>✨ Возможности Iceberg</h5>
+          <div class="modal-bullet">ACID-транзакции для S3</div>
+          <div class="modal-bullet">Time travel — запросы к данным на определённый момент</div>
+          <div class="modal-bullet">Schema evolution без перезаписи</div>
+          <div class="modal-bullet">Partition evolution — можно менять партиционирование</div>
+        </div>
+      `
+    },
+    'docker-jupyter': {
+      icon: '📓', iconBg: '#1a1028', iconColor: '#c39af0',
+      title: 'jupyter', subtitle: 'PySpark Notebook · Lab',
+      body: `
+        <p>Jupyter Lab с PySpark — для ad-hoc разработки и тестирования скриптов перед добавлением в DAG.</p>
+        <dl class="modal-kv">
+        <dt>Image</dt><dd>quay.io/jupyter/pyspark-notebook:spark-3.5.1</dd>
+        <dt>Port</dt><dd>8888</dd>
+        <dt>Volumes</dt><dd>./notebooks, ./data</dd>
+        </dl>
+        <p>Удобно проверять, как новая логика трансформации сработает на реальных данных перед коммитом в Spark-скрипт.</p>
+      `
+    },
+    'docker-clickhouse': {
+      icon: '🏛️', iconBg: '#1a1608', iconColor: '#d4a843',
+      title: 'clickhouse', subtitle: 'ClickHouse Server · OLAP',
+      body: `
+        <p>Колоночная OLAP СУБД от Яндекса. Хранит Gold-слой: sales_mart (~14 млн строк) и product_mapping.</p>
+        <dl class="modal-kv">
+        <dt>Image</dt><dd>clickhouse/clickhouse-server:latest</dd>
+        <dt>HTTP</dt><dd>8123 (для приложений)</dd>
+        <dt>TCP</dt><dd>9009 (external) → 9000 (native)</dd>
+        <dt>Engine</dt><dd>MergeTree</dd>
+        <dt>Volume</dt><dd>clickhouse-data</dd>
+        </dl>
+        <div class="modal-section">
+          <h5>⚡ Почему ClickHouse</h5>
+          <div class="modal-bullet">Колоночное хранение — агрегации работают в 100-1000 раз быстрее, чем в PostgreSQL</div>
+          <div class="modal-bullet">Отличное сжатие данных (типично 10x)</div>
+          <div class="modal-bullet">Нативная поддержка в Superset</div>
+        </div>
+      `
+    },
+    'docker-trino': {
+      icon: '🔍', iconBg: '#101820', iconColor: '#8ab4d4',
+      title: 'trino', subtitle: 'Trino SQL Engine',
+      body: `
+        <p>Федеративный SQL-движок. Позволяет делать SELECT напрямую из Iceberg/ClickHouse/MinIO в одном запросе.</p>
+        <dl class="modal-kv">
+        <dt>Image</dt><dd>trinodb/trino:435</dd>
+        <dt>Port</dt><dd>8085 (external) → 8080</dd>
+        <dt>Catalogs</dt><dd>iceberg, clickhouse</dd>
+        </dl>
+        <div class="modal-section">
+          <h5>🎯 Use cases</h5>
+          <div class="modal-bullet">Ad-hoc аналитика по Silver-слою (Iceberg)</div>
+          <div class="modal-bullet">JOIN между ClickHouse и Iceberg в одном запросе</div>
+          <div class="modal-bullet">Подключение в Superset как второй источник</div>
+        </div>
+      `
+    },
+    'docker-superset': {
+      icon: '📊', iconBg: '#0d1f17', iconColor: '#4db88a',
+      title: 'superset', subtitle: 'Apache Superset · BI',
+      body: `
+        <p>BI-платформа. Визуализирует данные из ClickHouse и Trino. Полностью open-source.</p>
+        <dl class="modal-kv">
+        <dt>Build</dt><dd>Custom Dockerfile.superset</dd>
+        <dt>Port</dt><dd>8088</dd>
+        <dt>Config</dt><dd>./superset_config.py</dd>
+        </dl>
+        <div class="modal-section">
+          <h5>📈 Возможности</h5>
+          <div class="modal-bullet">100+ типов визуализаций (line, bar, pie, treemap, sankey…)</div>
+          <div class="modal-bullet">Drill-down, фильтры, кросс-фильтрация</div>
+          <div class="modal-bullet">SQL Lab для ручных запросов</div>
+          <div class="modal-bullet">Алерты и расписания (email-отчёты)</div>
+        </div>
+      `
+    },
+    'docker-prometheus': {
+      icon: '🔥', iconBg: '#1f0e0e', iconColor: '#e05555',
+      title: 'prometheus', subtitle: 'Metrics Time-Series DB',
+      body: `
+        <p>Сборщик метрик. Опрашивает экспортёры каждые N секунд (scrape), хранит time-series данные с лейблами.</p>
+        <dl class="modal-kv">
+        <dt>Image</dt><dd>prom/prometheus:latest</dd>
+        <dt>Port</dt><dd>9090 (Web UI)</dd>
+        <dt>Storage</dt><dd>/prometheus (TSDB)</dd>
+        </dl>
+        <div class="modal-section">
+          <h5>📡 Опрашиваемые экспортёры</h5>
+          <div class="modal-bullet">node-exporter (метрики хоста)</div>
+          <div class="modal-bullet">cadvisor (метрики контейнеров)</div>
+          <div class="modal-bullet">clickhouse-exporter (метрики CH)</div>
+        </div>
+      `
+    },
+    'docker-grafana': {
+      icon: '📈', iconBg: '#1a1608', iconColor: '#d4a843',
+      title: 'grafana', subtitle: 'Grafana Dashboards',
+      body: `
+        <p>Визуализация метрик из Prometheus. Дашборды мониторинга инфраструктуры (CPU/RAM/disk/network/queries).</p>
+        <dl class="modal-kv">
+        <dt>Image</dt><dd>grafana/grafana:latest</dd>
+        <dt>Port</dt><dd>3000</dd>
+        <dt>Plugins</dt><dd>clock-panel, piechart-panel</dd>
+        </dl>
+        <p>Datasources и dashboards прокидываются через provisioning из ./monitoring/grafana/.</p>
+      `
+    },
+    'docker-cadvisor': {
+      icon: '📦', iconBg: '#1c2348', iconColor: '#5b7ef5',
+      title: 'cadvisor', subtitle: 'Container Advisor',
+      body: `
+        <p>Google cAdvisor. Собирает метрики Docker-контейнеров: CPU, RAM, network, disk per container в реальном времени.</p>
+        <dl class="modal-kv">
+        <dt>Image</dt><dd>gcr.io/cadvisor/cadvisor:v0.49.1</dd>
+        <dt>Port</dt><dd>8083 (external) → 8080</dd>
+        <dt>Privileged</dt><dd>Yes (нужен доступ к docker socket)</dd>
+        </dl>
+        <p>Позволяет в Grafana видеть нагрузку каждого контейнера отдельно — полезно для диагностики проблем.</p>
+      `
+    },
+    'docker-node-exporter': {
+      icon: '🖥️', iconBg: '#1c2348', iconColor: '#5b7ef5',
+      title: 'node-exporter', subtitle: 'Host Metrics',
+      body: `
+        <p>Метрики хост-машины: CPU usage, load avg, RAM, disk I/O, network throughput, filesystems, hardware sensors.</p>
+        <dl class="modal-kv">
+        <dt>Image</dt><dd>prom/node-exporter:latest</dd>
+        <dt>Port</dt><dd>9100</dd>
+        <dt>PID mode</dt><dd>host (для системных метрик)</dd>
+        </dl>
+        <p>В Grafana дашборде «Node Exporter Full» показывает всё, что нужно для мониторинга Linux-сервера.</p>
+      `
+    },
+    'docker-ch-exporter': {
+      icon: '📊', iconBg: '#1a1608', iconColor: '#d4a843',
+      title: 'clickhouse-exporter', subtitle: 'ClickHouse → Prometheus',
+      body: `
+        <p>Конвертирует системные метрики ClickHouse в формат Prometheus. Опрашивает system-таблицы CH.</p>
+        <dl class="modal-kv">
+        <dt>Image</dt><dd>f1yegor/clickhouse-exporter:latest</dd>
+        <dt>Port</dt><dd>9116</dd>
+        </dl>
+        <div class="modal-section">
+          <h5>📊 Метрики</h5>
+          <div class="modal-bullet">queries / inserts per second</div>
+          <div class="modal-bullet">memory usage</div>
+          <div class="modal-bullet">merges (background ops)</div>
+          <div class="modal-bullet">parts count (фрагментация)</div>
+        </div>
+      `
+    },
+
+    // ── TG Bot ──
+    'tg-bot': {
+      icon: '🤖', iconBg: '#1c2348', iconColor: '#5b7ef5',
+      title: '@DAG_Kaftal_bot', subtitle: 'Telegram-бот для уведомлений',
+      body: `
+        <p>Бот в Telegram, отправляющий уведомления о статусе всех 13 DAG-ов. Работает 24/7.</p>
+        <dl class="modal-kv">
+        <dt>Никнейм</dt><dd>@DAG_Kaftal_bot</dd>
+        <dt>API</dt><dd>Telegram Bot API (sendMessage)</dd>
+        <dt>Parse mode</dt><dd>HTML</dd>
+        <dt>Хранение токена</dt><dd>Airflow Variables</dd>
+        </dl>
+        <div class="modal-section">
+          <h5>📨 Примеры сообщений</h5>
+          <div class="modal-bullet">✅ Пайплайн по Ашан успешно завершился (DAG: etl_aushan)</div>
+          <div class="modal-bullet">✅ Справочник товаров обновлён (DAG: update_product_mapping)</div>
+          <div class="modal-bullet">✅ Витрина sales_mart обновлена (DAG: build_sales_mart)</div>
+          <div class="modal-bullet">❌ Ошибка в даге etl_magnit (Task: spark_processing, ошибка)</div>
+        </div>
+      `
+    },
+
+    // ── Stats ──
+    'stat-chains': {
+      icon: '🏪', iconBg: '#1e1510', iconColor: '#c87941',
+      title: '11 розничных сетей', subtitle: 'Все источники данных',
+      body: `
+        <p>Данные поступают от 11 крупнейших розничных сетей России.</p>
+        <span class="modal-tag green">X5</span><span class="modal-tag green">Дикси</span>
+        <span class="modal-tag green">Магнит</span><span class="modal-tag green">Ашан</span>
+        <span class="modal-tag green">Лента</span><span class="modal-tag green">О'кей</span>
+        <span class="modal-tag green">Перекрёсток</span><span class="modal-tag green">Пятёрочка</span>
+        <span class="modal-tag green">Верный</span><span class="modal-tag green">Бристоль</span>
+        <span class="modal-tag green">Красное&Белое</span>
+        <div class="modal-section">
+          <h5>📋 Особенности</h5>
+          <div class="modal-bullet">У каждой сети свой формат файлов и набор полей</div>
+          <div class="modal-bullet">Разные кодировки (UTF-8, CP1251) и разделители (;, TAB)</div>
+          <div class="modal-bullet">У каждой свой Spark-скрипт нормализации</div>
+        </div>
+      `
+    },
+    'stat-dags': {
+      icon: '🔄', iconBg: '#1c2348', iconColor: '#5b7ef5',
+      title: '13 Airflow DAGs', subtitle: '11 сетей + 2 витрины',
+      body: `
+        <p><strong>11 DAG-ов ETL по сетям</strong> (Bronze → Silver):</p>
+        <span class="modal-tag blue">etl_x5</span><span class="modal-tag blue">etl_diksi</span>
+        <span class="modal-tag blue">etl_magnit</span><span class="modal-tag blue">etl_aushan</span>
+        <span class="modal-tag blue">etl_lenta</span><span class="modal-tag blue">etl_okey</span>
+        <span class="modal-tag blue">etl_perekrestok</span><span class="modal-tag blue">etl_pyaterochka</span>
+        <span class="modal-tag blue">etl_vernyi</span><span class="modal-tag blue">etl_bristol</span>
+        <span class="modal-tag blue">etl_krasnoebeloe</span>
+        <hr class="modal-divider">
+        <p><strong>2 DAG-а для витрин</strong>:</p>
+        <span class="modal-tag amber">update_product_mapping</span> 04:00<br>
+        <span class="modal-tag amber">build_sales_mart</span> 05:00
+        <div class="modal-section">
+          <h5>📲 Telegram-алерты</h5>
+          <p>Каждый DAG отправляет статус в @DAG_Kaftal_bot — on_success и on_failure.</p>
+        </div>
+      `
+    },
+    'stat-containers': {
+      icon: '🐳', iconBg: '#1a1028', iconColor: '#c39af0',
+      title: '14 Docker контейнеров', subtitle: 'Полный стек инфраструктуры',
+      body: `
+        <div class="modal-section">
+          <h5>🔄 Оркестрация (3)</h5>
+          <div class="modal-bullet">airflow, postgres, minio</div>
+        </div>
+        <div class="modal-section">
+          <h5>⚡ Вычисления (4)</h5>
+          <div class="modal-bullet">spark-master, spark-worker, iceberg-rest, jupyter</div>
+        </div>
+        <div class="modal-section">
+          <h5>📊 Аналитика (3)</h5>
+          <div class="modal-bullet">clickhouse, trino, superset</div>
+        </div>
+        <div class="modal-section">
+          <h5>📈 Мониторинг (4)</h5>
+          <div class="modal-bullet">prometheus, grafana, cadvisor, node-exporter, clickhouse-exporter</div>
+        </div>
+      `
+    },
+    'stat-columns': {
+      icon: '📊', iconBg: '#0d1f17', iconColor: '#4db88a',
+      title: '42 колонки в OBT', subtitle: 'sales_mart · 14 млн строк',
+      body: `
+        <div class="modal-section">
+          <h5>📅 Время</h5>
+          <p>date, year, month, week_num</p>
+        </div>
+        <div class="modal-section">
+          <h5>🏪 Сеть и магазин</h5>
+          <p>retail_chain, region_name, city_name, address, store_code, store_name, store_format</p>
+        </div>
+        <div class="modal-section">
+          <h5>🛒 Товар</h5>
+          <p>product_id, product_name, product_category_2-5, brand, vendor, flavor, weight_grams, chip_type, package_type, barcode, manufacturer</p>
+        </div>
+        <div class="modal-section">
+          <h5>💰 Метрики продаж</h5>
+          <p>sales_quantity, sales_amount_rub, sales_cost_price, sales_kg, sales_tons, margin_rub, margin_pct, average_cost_price, average_sell_price</p>
+        </div>
+        <div class="modal-section">
+          <h5>📦 Остатки и промо</h5>
+          <p>stock_qty, stock_rub, promo_sales_rub</p>
+        </div>
+      `
+    },
+
+    // ── Pipeline Flow ──
+    'flow-source': {
+      icon: '🗃️', iconBg: '#1e1c10', iconColor: '#d4a843',
+      title: 'Источники данных · CSV', subtitle: '11 розничных сетей',
+      body: `
+        <p>Данные от 11 сетей загружаются через SCP на сервер в директорию <code>/opt/airflow/data/</code>.</p>
+        <dl class="modal-kv">
+        <dt>Формат</dt><dd>CSV (разделители ; и TAB)</dd>
+        <dt>Кодировка</dt><dd>UTF-8 / CP1251</dd>
+        <dt>Объём</dt><dd>~19 ГБ суммарно</dd>
+        <dt>Именование</dt><dd>{chain}_{month}_{year}.csv</dd>
+        </dl>
+        <div class="modal-section">
+          <h5>📝 Пример имён файлов</h5>
+          <div class="modal-bullet">aushan_april_2026.csv</div>
+          <div class="modal-bullet">magnit_march_2026.csv</div>
+          <div class="modal-bullet">x5_may_2026.csv</div>
+        </div>
+      `
+    },
+    'flow-bronze': {
+      icon: '⚙️', iconBg: '#1e1208', iconColor: '#c87941',
+      title: 'Bronze Layer · S3 (MinIO)', subtitle: 'Сырые данные «как есть»',
+      body: `
+        <p>FileSensor обнаруживает файлы, S3Hook грузит их в MinIO bucket «raw», оригиналы перемещаются в архив.</p>
+        <dl class="modal-kv">
+        <dt>Хранилище</dt><dd>MinIO (S3-compatible)</dd>
+        <dt>Bucket</dt><dd>raw</dd>
+        <dt>Архив</dt><dd>/opt/airflow/archive/</dd>
+        <dt>Изменения</dt><dd>Никаких — as-is</dd>
+        </dl>
+        <p>Принцип Bronze-слоя: ничего не трогаем, чтобы всегда можно было перезапустить пайплайн с сырых данных.</p>
+      `
+    },
+    'flow-silver': {
+      icon: '🔥', iconBg: '#0d1620', iconColor: '#8ab4d4',
+      title: 'Silver Layer · Apache Iceberg', subtitle: 'Нормализованные данные',
+      body: `
+        <p>Spark маппит колонки, типизирует значения, выполняет расчёты и записывает в Iceberg-таблицы с партиционированием.</p>
+        <dl class="modal-kv">
+        <dt>Engine</dt><dd>Spark 3.5 (PySpark)</dd>
+        <dt>Table Format</dt><dd>Apache Iceberg</dd>
+        <dt>Каталог</dt><dd>REST Catalog (iceberg-rest:8181)</dd>
+        <dt>Партиции</dt><dd>retail_chain / year / month</dd>
+        <dt>Таблиц</dt><dd>11 (по одной на сеть)</dd>
+        </dl>
+        <div class="modal-section">
+          <h5>✅ Что даёт Silver</h5>
+          <div class="modal-bullet">Единая типизированная схема внутри таблицы</div>
+          <div class="modal-bullet">ACID-транзакции при записи</div>
+          <div class="modal-bullet">Time travel — можно делать запросы к данным на определённую дату</div>
+          <div class="modal-bullet">Партиционирование ускоряет запросы по сети/периоду</div>
+        </div>
+      `
+    },
+    'flow-gold': {
+      icon: '🏆', iconBg: '#1a1608', iconColor: '#d4a843',
+      title: 'Gold Layer · ClickHouse OBT', subtitle: 'Витрина sales_mart',
+      body: `
+        <p>Spark читает все 11 Silver, унифицирует через select_*-функции, делает UNION + LEFT JOIN со справочником, фильтрует и пишет в ClickHouse параллельно с экзекуторов.</p>
+        <dl class="modal-kv">
+        <dt>СУБД</dt><dd>ClickHouse MergeTree</dd>
+        <dt>Таблица</dt><dd>default.sales_mart</dd>
+        <dt>Стратегия</dt><dd>TRUNCATE + INSERT</dd>
+        <dt>Параллелизм</dt><dd>4 партиции × 50K batch</dd>
+        <dt>Объём</dt><dd>~14 млн строк × 42 колонки</dd>
+        </dl>
+      `
+    },
+    'flow-superset': {
+      icon: '📊', iconBg: '#101e14', iconColor: '#4db88a',
+      title: 'Apache Superset · BI', subtitle: 'Дашборды и визуализация',
+      body: `
+        <p>Superset подключён к ClickHouse и Trino, визуализирует sales_mart и Silver-данные.</p>
+        <div class="modal-section">
+          <h5>📈 Типовые дашборды</h5>
+          <div class="modal-bullet">Продажи по сетям и периодам</div>
+          <div class="modal-bullet">Топ брендов чипсов</div>
+          <div class="modal-bullet">Региональное распределение</div>
+          <div class="modal-bullet">Маржинальность по категориям</div>
+          <div class="modal-bullet">Сравнение сетей по выручке/чеку</div>
+        </div>
+      `
+    },
+
+    // ── Technologies ──
+    'tech-yandex':     { icon:'Y', iconBg:'#fc3f1d', iconColor:'white', title:'Yandex Cloud', subtitle:'Облачная инфраструктура', body:`<p>Все сервисы развёрнуты на одной ВМ в Yandex Cloud. Прерываемая ВМ для оптимизации затрат.</p><p>Стоимость: ~6 350 ₽/мес за конфигурацию 8 vCPU / 32 GB / 160 GB SSD.</p><div class="modal-section"><h5>✅ Почему Yandex Cloud</h5><div class="modal-bullet">Дата-центры в РФ (соответствие 152-ФЗ)</div><div class="modal-bullet">Цены ниже AWS/GCP для российских пользователей</div><div class="modal-bullet">Удобный веб-интерфейс и CLI</div><div class="modal-bullet">Free tier eligible — часть ресурсов бесплатно</div></div>` },
+    'tech-airflow':    { icon:'🌊', iconBg:'#1c2348', iconColor:'#5b7ef5', title:'Apache Airflow', subtitle:'Оркестрация', body:`<p>13 DAG-ов. Операторы: FileSensor, PythonOperator, SparkSubmitOperator.</p><dl class="modal-kv"><dt>Версия</dt><dd>3.x</dd><dt>Executor</dt><dd>LocalExecutor</dd><dt>Метабаза</dt><dd>PostgreSQL</dd><dt>Алерты</dt><dd>@DAG_Kaftal_bot</dd></dl>` },
+    'tech-spark':      { icon:'⚡', iconBg:'#1e1510', iconColor:'#c87941', title:'Apache Spark', subtitle:'Распределённая обработка', body:`<p>Spark 3.5 для нормализации (Silver) и сборки витрины (Gold). PySpark.</p><div class="modal-section"><h5>🚀 Использование</h5><div class="modal-bullet">Чтение CSV/Parquet из S3</div><div class="modal-bullet">DataFrame API для трансформаций</div><div class="modal-bullet">Запись в Iceberg через .writeTo()</div><div class="modal-bullet">Параллельный INSERT в ClickHouse через foreachPartition</div></div>` },
+    'tech-iceberg':    { icon:'🧊', iconBg:'#1a1608', iconColor:'#d4a843', title:'Apache Iceberg', subtitle:'Open Table Format', body:`<p>ACID + time travel + schema evolution для S3. 11 таблиц в Silver.</p>` },
+    'tech-minio':      { icon:'🪣', iconBg:'#101820', iconColor:'#8ab4d4', title:'MinIO', subtitle:'S3 storage', body:`<p>Локальный S3. Buckets: raw (сырые CSV), warehouse (Iceberg).</p>` },
+    'tech-clickhouse': { icon:'🏛️', iconBg:'#1a1608', iconColor:'#d4a843', title:'ClickHouse', subtitle:'OLAP СУБД', body:`<p>Колоночная СУБД от Яндекса. Хранит Gold: sales_mart (~14 млн строк) + product_mapping.</p>` },
+    'tech-trino':      { icon:'🔍', iconBg:'#13161e', iconColor:'#7a82a0', title:'Trino', subtitle:'SQL Engine', body:`<p>Федеративный SQL. Для ad-hoc запросов к Iceberg-таблицам Silver.</p>` },
+    'tech-superset':   { icon:'📊', iconBg:'#0d1f17', iconColor:'#4db88a', title:'Apache Superset', subtitle:'BI', body:`<p>Дашборды на ClickHouse + Trino. Sales по сетям/брендам/регионам.</p>` },
+    'tech-docker':     { icon:'🐳', iconBg:'#1a1028', iconColor:'#c39af0', title:'Docker Compose', subtitle:'14 контейнеров', body:`<p>Вся инфраструктура в Docker. Общая сеть, volumes для персистентности данных.</p>` },
+    'tech-telegram':   { icon:'📲', iconBg:'#1f0e0e', iconColor:'#e05555', title:'Telegram Alerts', subtitle:'@DAG_Kaftal_bot', body:`<p>Все 13 DAG-ов отправляют уведомления через бота @DAG_Kaftal_bot. Credentials в Airflow Variables.</p>` },
+    'tech-python':     { icon:'🐍', iconBg:'#13161e', iconColor:'#7a82a0', title:'Python / PySpark', subtitle:'Основной язык', body:`<p>Все DAG-и и Spark-скрипты на Python. Библиотеки: clickhouse_connect, boto3, requests, pandas.</p>` },
+    'tech-grafana':    { icon:'📈', iconBg:'#1a1608', iconColor:'#d4a843', title:'Grafana + Prometheus', subtitle:'Мониторинг', body:`<p>Стек мониторинга: Prometheus собирает метрики через cAdvisor, node-exporter, clickhouse-exporter. Grafana визуализирует.</p>` },
+
+    // ── Chains ──
+    'chain-x5':           { icon:'🏪', iconBg:'#1e1510', iconColor:'#c87941', title:'X5 Group',     subtitle:'etl_x5',           body: makeChainBody('X5 Group', 'etl_x5', 'x5_silver') },
+    'chain-diksi':        { icon:'🏪', iconBg:'#1e1510', iconColor:'#c87941', title:'Дикси',        subtitle:'etl_diksi',        body: makeChainBody('Дикси', 'etl_diksi', 'diksi_silver') },
+    'chain-magnit':       { icon:'🏪', iconBg:'#1e1510', iconColor:'#c87941', title:'Магнит',       subtitle:'etl_magnit',       body: makeChainBody('Магнит', 'etl_magnit', 'magnit_silver') },
+    'chain-aushan':       { icon:'🏪', iconBg:'#1e1510', iconColor:'#c87941', title:'Ашан',         subtitle:'etl_aushan',       body: makeChainBody('Ашан', 'etl_aushan', 'aushan_silver') },
+    'chain-lenta':        { icon:'🏪', iconBg:'#1e1510', iconColor:'#c87941', title:'Лента',        subtitle:'etl_lenta',        body: makeChainBody('Лента', 'etl_lenta', 'lenta_silver') },
+    'chain-okey':         { icon:'🏪', iconBg:'#1e1510', iconColor:'#c87941', title:"О'кей",        subtitle:'etl_okey',         body: makeChainBody("О'кей", 'etl_okey', 'okey_silver') },
+    'chain-perekrestok':  { icon:'🏪', iconBg:'#1e1510', iconColor:'#c87941', title:'Перекрёсток',  subtitle:'etl_perekrestok',  body: makeChainBody('Перекрёсток', 'etl_perekrestok', 'perekrestok_silver') },
+    'chain-pyaterochka':  { icon:'🏪', iconBg:'#1e1510', iconColor:'#c87941', title:'Пятёрочка',    subtitle:'etl_pyaterochka',  body: makeChainBody('Пятёрочка', 'etl_pyaterochka', 'pyaterochka_silver') },
+    'chain-vernyi':       { icon:'🏪', iconBg:'#1e1510', iconColor:'#c87941', title:'Верный',       subtitle:'etl_vernyi',       body: makeChainBody('Верный', 'etl_vernyi', 'vernyi_silver') },
+    'chain-bristol':      { icon:'🏪', iconBg:'#1e1510', iconColor:'#c87941', title:'Бристоль',     subtitle:'etl_bristol',      body: makeChainBody('Бристоль', 'etl_bristol', 'bristol_silver') },
+    'chain-krasnoebeloe': { icon:'🏪', iconBg:'#1e1510', iconColor:'#c87941', title:'Красное&Белое',subtitle:'etl_krasnoebeloe', body: makeChainBody('Красное&Белое', 'etl_krasnoebeloe', 'krasnoebeloe_silver') },
+
+    // ── Tasks ──
+    'task-sensor': { icon:'👁️', iconBg:'#1c2348', iconColor:'#5b7ef5', title:'FileSensor', subtitle:'Ожидание файлов', body:`<dl class="modal-kv"><dt>Path</dt><dd>/opt/airflow/data/{chain}*</dd><dt>Mode</dt><dd>reschedule</dd><dt>Poke</dt><dd>30 сек</dd><dt>Timeout</dt><dd>60 сек</dd></dl><p>При reschedule-режиме воркер не блокируется — между поками задача отпускает слот.</p>` },
+    'task-s3':     { icon:'📤', iconBg:'#1e1510', iconColor:'#c87941', title:'load_to_s3_raw', subtitle:'PythonOperator (@task)', body:`<p>Загружает все найденные CSV-файлы в S3 bucket «raw» через S3Hook. Перемещает оригиналы в /archive/ для архивации.</p>` },
+    'task-spark':  { icon:'🔥', iconBg:'#0d1620', iconColor:'#8ab4d4', title:'spark_processing', subtitle:'SparkSubmitOperator', body:`<p>Запускает jobs/{chain}_spark_processing.py. Маппинг → типизация → расчёты → Iceberg append с партиционированием.</p>` },
+
+    // ── DAGs ──
+    'dag-mapping': { icon:'📖', iconBg:'#1a1608', iconColor:'#d4a843', title:'update_product_mapping', subtitle:'DAG 12 · 04:00', body:`<p>Собирает уникальные product_name из всех 11 Iceberg-таблиц, добавляет новые записи в ClickHouse-справочник.</p><p>Очистка от мусора: удаляются строки короче 3 символов, содержащие «тест», «xxx» и т.п.</p>` },
+    'dag-mart':    { icon:'⭐', iconBg:'#1a1608', iconColor:'#d4a843', title:'build_sales_mart', subtitle:'DAG 13 · 05:00', body:`<p>UNION 11 Silver + JOIN mapping + фильтрация → TRUNCATE + INSERT в ClickHouse (~14 млн строк).</p>` },
+
+    // ── OBT Steps ──
+    'obt-step-silver': { icon:'🧊', iconBg:'#101820', iconColor:'#8ab4d4', title:'11 Silver Iceberg', subtitle:'Источники', body:`<p>spark.table("iceberg.{chain}_silver.sales") — 11 таблиц с разными схемами.</p>` },
+    'obt-step-unify':  { icon:'🗺️', iconBg:'#1c2348', iconColor:'#5b7ef5', title:'select_*()', subtitle:'11 функций унификации', body:`<p>Каждая функция приводит DataFrame своей сети к единой схеме из 42 колонок. Недостающие поля заполняются NULL.</p>` },
+    'obt-step-union':  { icon:'🔗', iconBg:'#0d1f17', iconColor:'#4db88a', title:'UNION ALL', subtitle:'Склейка DF', body:`<p>unionByName(allowMissingColumns=True). Результат: ~14 млн строк с единой структурой.</p>` },
+    'obt-step-join':   { icon:'📖', iconBg:'#1a1608', iconColor:'#d4a843', title:'LEFT JOIN mapping', subtitle:'Обогащение справочником', body:`<p>Broadcast JOIN со справочником. Поля brand/flavor/weight перезаписываются из mapping при наличии.</p>` },
+    'obt-step-filter': { icon:'🚫', iconBg:'#1f0e0e', iconColor:'#e05555', title:'Фильтрация', subtitle:'Исключение «Не чипсы»', body:`<p>WHERE brand_manual != "Не чипсы" OR brand_manual IS NULL. Товары без разметки остаются в витрине.</p>` },
+    'obt-step-write':  { icon:'⚡', iconBg:'#1a1608', iconColor:'#d4a843', title:'Запись в ClickHouse', subtitle:'Параллельная вставка', body:`<p>4 Spark-партиции × 50K batch на каждой. Auto type-casting на экзекуторах через clickhouse_connect.</p>` },
+
+    // ── Mapping columns ──
+    'col-original-name': { icon:'📝', iconBg:'#13161e', iconColor:'#7a82a0', title:'original_name', subtitle:'String · Primary Key', body:`<p>Оригинальное название из источника. Ключ для JOIN с витриной. Собирается автоматически из всех 11 Iceberg-таблиц.</p>` },
+    'col-brand-manual':  { icon:'🏷️', iconBg:'#1c2348', iconColor:'#5b7ef5', title:'brand_manual', subtitle:'String · Ручная разметка', body:`<p>Бренд (ручная разметка). Имеет приоритет над полем brand из источника.</p><p><strong>Специальное значение:</strong> «Не чипсы» — товар исключается из витрины.</p>` },
+    'col-chip-type':     { icon:'🍟', iconBg:'#101820', iconColor:'#8ab4d4', title:'chip_type_manual', subtitle:'String · Тип чипсов', body:`<p>Картофельные, Кукурузные, Пшеничные, Овощные чипсы, Попкорн.</p>` },
+    'col-package':       { icon:'📦', iconBg:'#1e1510', iconColor:'#c87941', title:'package_manual', subtitle:'String · Тип упаковки', body:`<p>Пакет, Туба, Коробка, Ведро, Стакан.</p>` },
+    'col-flavor':        { icon:'🌶️', iconBg:'#0d1f17', iconColor:'#4db88a', title:'flavor_manual', subtitle:'String · Вкус', body:`<p>Соль, Сметана и лук, Краб, Сыр, Стейк, Острые, Барбекю, Бекон, Лобстер.</p>` },
+    'col-weight':        { icon:'⚖️', iconBg:'#1a1608', iconColor:'#d4a843', title:'weight_manual', subtitle:'Float64 · граммы', body:`<p>Вес в граммах: 70, 90, 100, 140, 160, 200. Используется для нормализации цены за грамм.</p>` },
+
+    // ── Monitoring ──
+    'mon-telegram': { icon:'📲', iconBg:'#1f0e0e', iconColor:'#e05555', title:'Telegram Alerts', subtitle:'LIVE ✅', body:`<p>Бот @DAG_Kaftal_bot отправляет уведомления о статусе всех 13 DAG-ов. Bot API через Airflow Variables.</p>` },
+    'mon-superset': { icon:'📊', iconBg:'#0d1f17', iconColor:'#4db88a', title:'Apache Superset', subtitle:'LIVE ✅', body:`<p>Подключён к ClickHouse. Датасет: sales_mart (~14 млн строк, 42 колонки).</p>` },
+    'mon-grafana':  { icon:'📈', iconBg:'#1a1608', iconColor:'#d4a843', title:'Grafana + Prometheus', subtitle:'WIP 🚧', body:`<p>Контейнеры запущены, метрики собираются. Дашборды допиливаются.</p><div class="modal-section"><h5>📡 Источники метрик</h5><div class="modal-bullet">cAdvisor — статистика Docker-контейнеров</div><div class="modal-bullet">node-exporter — метрики хост-машины</div><div class="modal-bullet">clickhouse-exporter — метрики ClickHouse</div></div>` },
+    'mon-soda':     { icon:'🔎', iconBg:'#1a1028', iconColor:'#c39af0', title:'Soda / Great Expectations', subtitle:'PLANNED 📋', body:`<p>Запланированы проверки качества данных:</p><div class="modal-bullet">NOT NULL на ключевых полях</div><div class="modal-bullet">Уникальность product_id</div><div class="modal-bullet">Допустимые диапазоны цен и количеств</div><div class="modal-bullet">Поиск аномалий в объёмах продаж</div>` },
+  };
+
+  function makeChainBody(name, dagId, schema) {
+    return `<p>Розничная сеть <strong>${name}</strong>. Обрабатывается DAG-ом <code>${dagId}</code>.</p>
+      <dl class="modal-kv">
+      <dt>DAG</dt><dd>${dagId}</dd>
+      <dt>Silver</dt><dd>iceberg.${schema}.sales</dd>
+      <dt>Schedule</dt><dd>@daily (FileSensor)</dd>
+      </dl>
+      <div class="modal-section">
+        <h5>🔄 Пайплайн</h5>
+        <div class="modal-bullet">FileSensor → ожидание файлов /data/${name.toLowerCase()}*</div>
+        <div class="modal-bullet">load_to_s3_raw → загрузка в MinIO bucket «raw»</div>
+        <div class="modal-bullet">spark_processing → нормализация и запись в Iceberg</div>
+      </div>`;
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // MODAL LOGIC
+  // ══════════════════════════════════════════════════════════
+  function openModal(key) {
+    const data = MODALS[key];
+    if (!data) return;
+    const inner = document.getElementById('modal-inner');
+    inner.innerHTML = `
+      <div class="modal-header">
+        <div class="modal-icon" style="background:${data.iconBg};color:${data.iconColor};">${data.icon}</div>
+        <div>
+          <div class="modal-title">${data.title}</div>
+          <div class="modal-subtitle">${data.subtitle}</div>
+        </div>
+      </div>
+      <div class="modal-body">${data.body}</div>
+    `;
+    document.getElementById('modal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal() {
+    document.getElementById('modal').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  function toggleExpand(trigger) {
+    const content = trigger.nextElementSibling;
+    trigger.classList.toggle('open');
+    content.classList.toggle('open');
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // SCROLL SPY
+  // ══════════════════════════════════════════════════════════
+  const sections = document.querySelectorAll('section[id], div[id="overview"]');
+  const navLinks = document.querySelectorAll('nav a[href^="#"]');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navLinks.forEach(l => l.classList.remove('active'));
+        const active = document.querySelector(`nav a[href="#${entry.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+
+  sections.forEach(s => observer.observe(s));
+
+  // ══════════════════════════════════════════════════════════
+  // ANIMATE ON SCROLL
+  // ══════════════════════════════════════════════════════════
+  const animateObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) entry.target.classList.add('visible');
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('.animate-in').forEach(el => animateObserver.observe(el));
+
+  // ══════════════════════════════════════════════════════════
+  // COUNTER ANIMATION
+  // ══════════════════════════════════════════════════════════
+  function animateCounters() {
+    document.querySelectorAll('.stat-num[data-target]').forEach(el => {
+      const target = parseInt(el.dataset.target);
+      const duration = 1500;
+      const start = performance.now();
+      function update(now) {
+        const elapsed = now - start;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        el.textContent = Math.round(target * eased);
+        if (progress < 1) requestAnimationFrame(update);
+      }
+      requestAnimationFrame(update);
+    });
+  }
+
+  const counterObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        animateCounters();
+        counterObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.5 });
+
+  const statsRow = document.querySelector('.stats-row');
+  if (statsRow) counterObserver.observe(statsRow);
+</script>
+</body>
+</html>
