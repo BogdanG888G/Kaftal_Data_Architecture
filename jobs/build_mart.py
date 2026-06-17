@@ -1,5 +1,6 @@
 """
-Сборка единой витрины из 11 сетей + LEFT JOIN со справочником товаров
+Сборка единой витрины из 12 сетей + LEFT JOIN со справочником товаров
+🔄 ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ по file_name
 Параллельная распределённая запись в ClickHouse напрямую с экзекуторов
 Фильтрация: только чипсы (исключаем товары с brand_manual = 'Не чипсы')
 """
@@ -15,7 +16,7 @@ import clickhouse_connect
 # ============================================================
 spark = (
     SparkSession.builder
-    .appName("Build Sales Mart")
+    .appName("Build Sales Mart Incremental")
     .config("spark.sql.adaptive.enabled", "true")
     .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
     .config("spark.sql.adaptive.skewJoin.enabled", "true")
@@ -39,10 +40,12 @@ CLICKHOUSE_TABLE = "sales_mart"
 BATCH_SIZE = 50_000
 NUM_PARTITIONS = 4
 
+# 🎯 РЕЖИМЫ ЗАГРУЗКИ
+# True  = только новые file_name (быстро, дописываем)
+# False = полная перезагрузка с TRUNCATE (когда обновил справочник)
+INCREMENTAL_MODE = True
 
-# ============================================================
-# ХЕЛПЕРЫ
-# ============================================================
+
 def get_ch_client():
     return clickhouse_connect.get_client(
         host=CLICKHOUSE_HOST,
@@ -56,7 +59,6 @@ def get_ch_client():
 
 
 def _col(name, cast_type=None, default=""):
-    """Безопасное обращение к колонке: coalesce + cast."""
     c = F.coalesce(F.col(name), F.lit(default))
     if cast_type:
         c = c.cast(cast_type)
@@ -68,7 +70,7 @@ def _lit_null(cast_type):
 
 
 # ============================================================
-# УНИФИЦИРОВАННЫЕ КОЛОНКИ ВИТРИНЫ
+# УНИФИЦИРОВАННЫЕ КОЛОНКИ ВИТРИНЫ (как у тебя)
 # ============================================================
 MART_COLUMNS = [
     "year", "month", "retail_chain",
@@ -91,7 +93,7 @@ MART_COLUMNS = [
 
 
 # ============================================================
-# ФУНКЦИИ УНИФИКАЦИИ ПО СЕТЯМ
+# ФУНКЦИИ УНИФИКАЦИИ (как у тебя были — без изменений)
 # ============================================================
 def select_x5(df):
     return df.select(
@@ -126,6 +128,55 @@ def select_x5(df):
         F.col("average_sell_price").cast("double").alias("average_sell_price"),
         _lit_null("double").alias("margin_rub"),
         _lit_null("double").alias("margin_pct"),
+        _lit_null("double").alias("cost_price_rub"),
+        _lit_null("double").alias("max_sell_price"),
+        _lit_null("double").alias("max_cost_price"),
+        _lit_null("int").alias("stock_qty"),
+        _lit_null("double").alias("stock_rub"),
+        _lit_null("double").alias("promo_sales_rub"),
+        _lit_null("int").alias("week_num"),
+        F.col("file_name").alias("file_name"),
+        F.col("period").cast("string").alias("date"),
+    )
+
+
+def select_magnit_new(df):
+    """Магнит НОВЫЙ формат — приведён к схеме MART_COLUMNS."""
+    return df.select(
+        F.col("year").cast("int").alias("year"),
+        F.col("month").alias("month"),
+        F.col("retail_chain").alias("retail_chain"),
+        _lit_null("string").alias("region_name"),
+        _lit_null("string").alias("city_name"),
+        _col("address").alias("address"),
+        _col("store_code").alias("store_code"),
+        _col("store_name").alias("store_name"),
+        _col("format").alias("store_format"),
+        _col("category_level_1").alias("product_category_2"),
+        _col("category_level_2").alias("product_category_3"),
+        _col("category_level_3").alias("product_category_4"),
+        F.lit("").alias("product_category_5"),
+        _col("product_id", "string").alias("product_id"),
+        F.col("product_name").alias("product_name_search"),
+        _lit_null("string").alias("product_uni_name"),
+        _col("brand").alias("brand"),
+        _col("vendor").alias("vendor"),
+        F.lit("").alias("flavor"),
+        F.lit("").alias("weight_grams"),
+        _col("barcode").alias("barcode"),
+        F.lit("").alias("manufacturer"),
+        F.col("sales_quantity").cast("int").alias("sales_quantity"),
+        F.col("sales_amount_rub").cast("double").alias("sales_amount_rub"),
+        F.col("sales_cost_price").cast("double").alias("sales_cost_price"),
+        _lit_null("double").alias("sales_kg"),
+        _lit_null("double").alias("sales_tons"),
+        F.col("average_cost_price").cast("double").alias("average_cost_price"),
+        F.col("average_sell_price").cast("double").alias("average_sell_price"),
+        (F.col("sales_amount_rub") - F.col("sales_cost_price")).cast("double").alias("margin_rub"),
+        F.when(F.col("sales_amount_rub") > 0,
+               (F.col("sales_amount_rub") - F.col("sales_cost_price"))
+               / F.col("sales_amount_rub") * 100
+              ).cast("double").alias("margin_pct"),
         _lit_null("double").alias("cost_price_rub"),
         _lit_null("double").alias("max_sell_price"),
         _lit_null("double").alias("max_cost_price"),
@@ -592,14 +643,14 @@ def select_redwhite(df):
 
 
 # ============================================================
-# РАСПРЕДЕЛЁННЫЙ ПИСАТЕЛЬ В CLICKHOUSE (на экзекуторах)
+# РАСПРЕДЕЛЁННЫЙ ПИСАТЕЛЬ В CLICKHOUSE
 # ============================================================
 def insert_partition_to_clickhouse(iterator):
     import clickhouse_connect
     import math
     from datetime import date, datetime
 
-    def normalize_type(ch_type: str):
+    def normalize_type(ch_type):
         nullable = False
         t = ch_type
         while True:
@@ -662,22 +713,14 @@ def insert_partition_to_clickhouse(iterator):
     types = ch_types_b.value
 
     client = clickhouse_connect.get_client(
-        host="clickhouse",
-        port=8123,
-        username="admin",
-        password="123",
-        database="default",
-        connect_timeout=30,
-        send_receive_timeout=300,
+        host="clickhouse", port=8123,
+        username="admin", password="123", database="default",
+        connect_timeout=30, send_receive_timeout=300,
     )
 
     batch = []
-
     for row in iterator:
-        record = tuple(
-            cast_val(col_name, row[col_name], types[col_name])
-            for col_name in cols
-        )
+        record = tuple(cast_val(c, row[c], types[c]) for c in cols)
         batch.append(record)
 
         if len(batch) >= BATCH_SIZE:
@@ -695,45 +738,125 @@ def insert_partition_to_clickhouse(iterator):
 # ============================================================
 try:
     chains = {
-        "x5":          ("iceberg.x5_silver.sales",          select_x5),
-        "diksi":       ("iceberg.diksi_silver.sales",       select_diksi),
-        "magnit":      ("iceberg.magnit_silver.sales",      select_magnit),
-        "aushan":      ("iceberg.aushan_silver.sales",      select_aushan),
-        "lenta":       ("iceberg.lenta_silver.sales",       select_lenta),
-        "okey":        ("iceberg.okey_silver.sales",        select_okey),
-        "perekrestok": ("iceberg.perekrestok_silver.sales", select_perekrestok),
-        "pyaterochka": ("iceberg.pyaterochka_silver.sales", select_pyaterochka),
-        "vernyi":      ("iceberg.vernyi_silver.sales",      select_vernyi),
-        "bristol":     ("iceberg.bristol_silver.sales",     select_bristol),
-        "redwhite":    ("iceberg.redwhite_silver.sales",    select_redwhite),
+        "x5":          ("iceberg.x5_silver.sales",                  select_x5),
+        "diksi":       ("iceberg.diksi_silver.sales",               select_diksi),
+        "magnit":      ("iceberg.magnit_silver.sales",              select_magnit),
+        "aushan":      ("iceberg.aushan_silver.sales",              select_aushan),
+        "lenta":       ("iceberg.lenta_silver.sales",               select_lenta),
+        "okey":        ("iceberg.okey_silver.sales",                select_okey),
+        "perekrestok": ("iceberg.perekrestok_silver.sales",         select_perekrestok),
+        "pyaterochka": ("iceberg.pyaterochka_silver.sales",         select_pyaterochka),
+        "vernyi":      ("iceberg.vernyi_silver.sales",              select_vernyi),
+        "bristol":     ("iceberg.bristol_silver.sales",             select_bristol),
+        "redwhite":    ("iceberg.redwhite_silver.sales",            select_redwhite),
+        "magnit_new":  ("iceberg.magnit_new_silver.magnit_new_sales", select_magnit_new),
     }
 
+    # ============================================================
+    # 🆕 ШАГ 0: получаем уже загруженные file_name из ClickHouse
+    # ============================================================
+    loaded_files = set()
+    table_exists = False
+
+    if INCREMENTAL_MODE:
+        print("\n" + "=" * 80)
+        print("🔍 ИНКРЕМЕНТ: проверяем, какие file_name уже в ClickHouse")
+        print("=" * 80)
+
+        try:
+            client = get_ch_client()
+            tables = client.query(
+                f"SELECT name FROM system.tables "
+                f"WHERE database='{CLICKHOUSE_DB}' AND name='{CLICKHOUSE_TABLE}'"
+            ).result_rows
+            
+            if tables:
+                table_exists = True
+                rows = client.query(
+                    f"SELECT DISTINCT file_name "
+                    f"FROM {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE} "
+                    f"WHERE file_name IS NOT NULL AND file_name != ''"
+                ).result_rows
+                loaded_files = {r[0] for r in rows}
+                print(f"✓ Уже в ClickHouse: {len(loaded_files):,} уникальных file_name")
+            else:
+                print(f"⚠ Таблица {CLICKHOUSE_TABLE} не существует — первичная загрузка")
+            
+            client.close()
+        except Exception as e:
+            print(f"⚠ Не удалось получить список загруженных файлов: {e}")
+            print(f"   Будем грузить ВСЁ")
+            loaded_files = set()
+
+    # ============================================================
+    # ШАГ 1: загрузка и унификация по сетям (с фильтром по file_name)
+    # ============================================================
     print("\n" + "=" * 80)
     print("ЗАГРУЗКА И УНИФИКАЦИЯ ДАННЫХ ИЗ СЕТЕЙ")
     print("=" * 80)
 
     dfs = []
+    stats_new = {}
+    stats_skipped = {}
+
     for chain_name, (table_name, select_func) in chains.items():
         try:
             df = spark.table(table_name)
             unified = select_func(df)
+
+            if INCREMENTAL_MODE and loaded_files:
+                # Получаем все уникальные file_name из этой сети
+                chain_files = {
+                    r[0] for r in unified
+                        .select("file_name").distinct().collect()
+                    if r[0]
+                }
+                new_files = chain_files - loaded_files
+                skipped = chain_files & loaded_files
+
+                stats_new[chain_name] = len(new_files)
+                stats_skipped[chain_name] = len(skipped)
+
+                if not new_files:
+                    print(f"  ⊘ {chain_name}: все {len(chain_files)} файлов уже загружены")
+                    continue
+
+                # Оставляем только новые
+                unified = unified.filter(F.col("file_name").isin(list(new_files)))
+                print(f"  ✓ {chain_name}: +{len(new_files)} новых файлов "
+                      f"(пропущено {len(skipped)})")
+            else:
+                stats_new[chain_name] = "ALL"
+                stats_skipped[chain_name] = 0
+                print(f"  ✓ {chain_name}: полная загрузка")
+
             dfs.append(unified)
-            print(f"  ✓ {chain_name}")
+
         except Exception as e:
-            print(f"  ⚠ {chain_name}: {str(e)[:80]}")
+            print(f"  ⚠ {chain_name}: {str(e)[:120]}")
+
+    total_new = sum(v for v in stats_new.values() if isinstance(v, int))
+    total_skipped = sum(stats_skipped.values())
 
     if not dfs:
-        print("⚠ Нет данных для обработки")
+        print(f"\n✅ Новых файлов нет — витрина актуальна!")
+        print(f"   Пропущено файлов: {total_skipped}")
         spark.stop()
         raise SystemExit(0)
 
-    # 1. UNION
+    print(f"\n📊 Итого: новых файлов = {total_new}, пропущено = {total_skipped}")
+
+    # ============================================================
+    # ШАГ 2: UNION
+    # ============================================================
     all_data = dfs[0]
     for df in dfs[1:]:
         all_data = all_data.unionByName(df, allowMissingColumns=True)
     print(f"\n✓ UNION готов: {len(dfs)} сетей")
 
-    # 2. Загрузка справочника из ClickHouse
+    # ============================================================
+    # ШАГ 3: справочник
+    # ============================================================
     print("\n" + "=" * 80)
     print("СПРАВОЧНИК И ОБОГАЩЕНИЕ")
     print("=" * 80)
@@ -755,13 +878,13 @@ try:
 
     print(f"✓ Справочник загружен: {len(mapping_pd):,} записей")
 
-    # Схема целевой таблицы
-    desc_rows = client.query(f"DESCRIBE TABLE {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}").result_rows
+    desc_rows = client.query(
+        f"DESCRIBE TABLE {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}"
+    ).result_rows
     ch_columns = [row[0] for row in desc_rows]
     ch_types = {row[0]: row[1] for row in desc_rows}
     client.close()
 
-    # Spark DataFrame справочника
     if len(mapping_pd) > 0:
         mapping = spark.createDataFrame(mapping_pd)
     else:
@@ -772,7 +895,9 @@ try:
             "flavor_manual string, weight_manual string",
         )
 
-    # 3. LEFT JOIN + обогащение + фильтрация
+    # ============================================================
+    # ШАГ 4: LEFT JOIN + обогащение + фильтрация
+    # ============================================================
     print("Выполняем LEFT JOIN с обогащением...")
 
     all_data = all_data.join(
@@ -783,18 +908,14 @@ try:
 
     all_data = (
         all_data
-        .withColumn("brand",
-            F.coalesce(F.col("brand_manual"), F.col("brand")))
-        .withColumn("flavor",
-            F.coalesce(F.col("flavor_manual"), F.col("flavor")))
+        .withColumn("brand", F.coalesce(F.col("brand_manual"), F.col("brand")))
+        .withColumn("flavor", F.coalesce(F.col("flavor_manual"), F.col("flavor")))
         .withColumn("weight_grams",
             F.when(F.col("weight_manual").isNotNull(),
                    F.col("weight_manual").cast("string"))
              .otherwise(F.col("weight_grams")))
-        .withColumn("chip_type",
-            F.coalesce(F.col("chip_type_manual"), F.lit("")))
-        .withColumn("package_type",
-            F.coalesce(F.col("package_manual"), F.lit("")))
+        .withColumn("chip_type", F.coalesce(F.col("chip_type_manual"), F.lit("")))
+        .withColumn("package_type", F.coalesce(F.col("package_manual"), F.lit("")))
         .withColumn("product_name",
             F.when(F.col("product_uni_name").isNotNull(),
                    F.col("product_uni_name"))
@@ -802,20 +923,17 @@ try:
         .withColumn("created_at", F.current_date())
     )
 
-    # Фильтрация: только чипсы
     print("Применяем фильтрацию: оставляем только чипсы...")
     all_data = all_data.filter(
         (F.col("brand_manual") != "Не чипсы") | F.col("brand_manual").isNull()
     )
 
-    # Удаляем вспомогательные колонки
     all_data = all_data.drop(
         "brand_manual", "chip_type_manual", "package_manual",
         "flavor_manual", "weight_manual", "original_name",
         "product_name_search", "product_uni_name",
     )
 
-    # Добавляем недостающие колонки
     for col_name in ch_columns:
         if col_name not in all_data.columns:
             all_data = all_data.withColumn(col_name, F.lit(None))
@@ -823,18 +941,27 @@ try:
     all_data = all_data.select(*ch_columns)
     print("✓ Обогащение и фильтрация выполнены")
 
-    # 4. Очистка ClickHouse
-    print("\nОчищаем старые данные в ClickHouse...")
-    client = get_ch_client()
-    client.command(f"TRUNCATE TABLE IF EXISTS {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}")
-    client.close()
-    print("✓ Таблица очищена")
+    # ============================================================
+    # ШАГ 5: TRUNCATE ТОЛЬКО ПРИ FULL RELOAD
+    # ============================================================
+    if not INCREMENTAL_MODE:
+        print("\n🗑️ FULL RELOAD: очищаем старые данные...")
+        client = get_ch_client()
+        client.command(f"TRUNCATE TABLE IF EXISTS {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}")
+        client.close()
+        print("✓ Таблица очищена")
+    else:
+        print("\n🔄 ИНКРЕМЕНТ: дописываем БЕЗ TRUNCATE")
 
-    # 5. Broadcast метаданных
+    # ============================================================
+    # ШАГ 6: broadcast
+    # ============================================================
     ch_columns_b = spark.sparkContext.broadcast(ch_columns)
     ch_types_b = spark.sparkContext.broadcast(ch_types)
 
-    # 6. Распределённая запись
+    # ============================================================
+    # ШАГ 7: запись
+    # ============================================================
     print("\nЗаписываем данные в ClickHouse...")
     start_time = time.time()
 
@@ -845,21 +972,39 @@ try:
     elapsed = time.time() - start_time
     print(f"✓ Запись завершена за {elapsed:.2f}с")
 
-    # 7. Контрольная проверка
+    # ============================================================
+    # ШАГ 8: итоговая проверка
+    # ============================================================
     client = get_ch_client()
     final_count = client.query(
         f"SELECT count() FROM {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}"
     ).result_set[0][0]
+    
+    chain_stats = client.query(f"""
+        SELECT retail_chain, count() AS rows
+        FROM {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}
+        GROUP BY retail_chain
+        ORDER BY rows DESC
+    """).result_rows
     client.close()
 
     print(f"\n{'=' * 80}")
     print(f"✅ Витрина успешно обновлена!")
-    print(f"   Записано в ClickHouse: {final_count:,} строк")
-    print(f"   Общее время работы:    {elapsed:.1f}с")
+    print(f"   Режим:                  {'ИНКРЕМЕНТ' if INCREMENTAL_MODE else 'FULL RELOAD'}")
+    print(f"   Загружено новых файлов: {total_new}")
+    print(f"   Пропущено старых:        {total_skipped}")
+    print(f"   Всего в ClickHouse:      {final_count:,} строк")
+    print(f"   Время:                  {elapsed:.1f}с")
     if elapsed > 0 and final_count > 0:
-        print(f"   Средняя скорость:      {final_count / elapsed:,.0f} стр/сек")
+        print(f"   Скорость:               {final_count / elapsed:,.0f} стр/сек")
+    
+    print(f"\n📈 По сетям:")
+    for row in chain_stats:
+        print(f"   {row[0]:<15} | {row[1]:>15,} строк")
     print(f"{'=' * 80}")
 
+except SystemExit:
+    pass
 except Exception:
     print("\n⚠ Ошибка пайплайна:")
     traceback.print_exc()
