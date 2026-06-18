@@ -1,5 +1,5 @@
 """
-Сборка единой витрины из 12 сетей + LEFT JOIN со справочником товаров
+Сборка единой витрины из 13 сетей + LEFT JOIN со справочником товаров
 🔄 ИНКРЕМЕНТАЛЬНОЕ ОБНОВЛЕНИЕ по file_name
 Параллельная распределённая запись в ClickHouse напрямую с экзекуторов
 Фильтрация: только чипсы (исключаем товары с brand_manual = 'Не чипсы')
@@ -40,9 +40,6 @@ CLICKHOUSE_TABLE = "sales_mart"
 BATCH_SIZE = 50_000
 NUM_PARTITIONS = 4
 
-# 🎯 РЕЖИМЫ ЗАГРУЗКИ
-# True  = только новые file_name (быстро, дописываем)
-# False = полная перезагрузка с TRUNCATE (когда обновил справочник)
 INCREMENTAL_MODE = True
 
 
@@ -69,9 +66,6 @@ def _lit_null(cast_type):
     return F.lit(None).cast(cast_type)
 
 
-# ============================================================
-# УНИФИЦИРОВАННЫЕ КОЛОНКИ ВИТРИНЫ (как у тебя)
-# ============================================================
 MART_COLUMNS = [
     "year", "month", "retail_chain",
     "region_name", "city_name", "address",
@@ -93,7 +87,7 @@ MART_COLUMNS = [
 
 
 # ============================================================
-# ФУНКЦИИ УНИФИКАЦИИ (как у тебя были — без изменений)
+# ФУНКЦИИ УНИФИКАЦИИ
 # ============================================================
 def select_x5(df):
     return df.select(
@@ -141,7 +135,6 @@ def select_x5(df):
 
 
 def select_magnit_new(df):
-    """Магнит НОВЫЙ формат — приведён к схеме MART_COLUMNS."""
     return df.select(
         F.col("year").cast("int").alias("year"),
         F.col("month").alias("month"),
@@ -164,6 +157,54 @@ def select_magnit_new(df):
         F.lit("").alias("flavor"),
         F.lit("").alias("weight_grams"),
         _col("barcode").alias("barcode"),
+        F.lit("").alias("manufacturer"),
+        F.col("sales_quantity").cast("int").alias("sales_quantity"),
+        F.col("sales_amount_rub").cast("double").alias("sales_amount_rub"),
+        F.col("sales_cost_price").cast("double").alias("sales_cost_price"),
+        _lit_null("double").alias("sales_kg"),
+        _lit_null("double").alias("sales_tons"),
+        F.col("average_cost_price").cast("double").alias("average_cost_price"),
+        F.col("average_sell_price").cast("double").alias("average_sell_price"),
+        (F.col("sales_amount_rub") - F.col("sales_cost_price")).cast("double").alias("margin_rub"),
+        F.when(F.col("sales_amount_rub") > 0,
+               (F.col("sales_amount_rub") - F.col("sales_cost_price"))
+               / F.col("sales_amount_rub") * 100
+              ).cast("double").alias("margin_pct"),
+        _lit_null("double").alias("cost_price_rub"),
+        _lit_null("double").alias("max_sell_price"),
+        _lit_null("double").alias("max_cost_price"),
+        _lit_null("int").alias("stock_qty"),
+        _lit_null("double").alias("stock_rub"),
+        _lit_null("double").alias("promo_sales_rub"),
+        _lit_null("int").alias("week_num"),
+        F.col("file_name").alias("file_name"),
+        F.col("period").cast("string").alias("date"),
+    )
+
+
+def select_samokat(df):
+    return df.select(
+        F.col("year").cast("int").alias("year"),
+        F.col("month").alias("month"),
+        F.col("retail_chain").alias("retail_chain"),
+        F.lit("").alias("region_name"),
+        _col("city_name").alias("city_name"),
+        F.lit("").alias("address"),
+        F.lit("").alias("store_code"),
+        F.lit("").alias("store_name"),
+        F.lit("").alias("store_format"),
+        _col("category_level_1").alias("product_category_2"),
+        _col("category_level_2").alias("product_category_3"),
+        _col("category_level_3").alias("product_category_4"),
+        _col("category_level_4").alias("product_category_5"),
+        F.lit("").alias("product_id"),
+        F.col("product_name").alias("product_name_search"),
+        _lit_null("string").alias("product_uni_name"),
+        _col("brand").alias("brand"),
+        _col("vendor").alias("vendor"),
+        F.lit("").alias("flavor"),
+        F.lit("").alias("weight_grams"),
+        F.lit("").alias("barcode"),
         F.lit("").alias("manufacturer"),
         F.col("sales_quantity").cast("int").alias("sales_quantity"),
         F.col("sales_amount_rub").cast("double").alias("sales_amount_rub"),
@@ -738,22 +779,23 @@ def insert_partition_to_clickhouse(iterator):
 # ============================================================
 try:
     chains = {
-        "x5":          ("iceberg.x5_silver.sales",                  select_x5),
-        "diksi":       ("iceberg.diksi_silver.sales",               select_diksi),
-        "magnit":      ("iceberg.magnit_silver.sales",              select_magnit),
-        "aushan":      ("iceberg.aushan_silver.sales",              select_aushan),
-        "lenta":       ("iceberg.lenta_silver.sales",               select_lenta),
-        "okey":        ("iceberg.okey_silver.sales",                select_okey),
-        "perekrestok": ("iceberg.perekrestok_silver.sales",         select_perekrestok),
-        "pyaterochka": ("iceberg.pyaterochka_silver.sales",         select_pyaterochka),
-        "vernyi":      ("iceberg.vernyi_silver.sales",              select_vernyi),
-        "bristol":     ("iceberg.bristol_silver.sales",             select_bristol),
-        "redwhite":    ("iceberg.redwhite_silver.sales",            select_redwhite),
+        "x5":          ("iceberg.x5_silver.sales",                    select_x5),
+        "diksi":       ("iceberg.diksi_silver.sales",                 select_diksi),
+        "magnit":      ("iceberg.magnit_silver.sales",                select_magnit),
+        "aushan":      ("iceberg.aushan_silver.sales",                select_aushan),
+        "lenta":       ("iceberg.lenta_silver.sales",                 select_lenta),
+        "okey":        ("iceberg.okey_silver.sales",                  select_okey),
+        "perekrestok": ("iceberg.perekrestok_silver.sales",           select_perekrestok),
+        "pyaterochka": ("iceberg.pyaterochka_silver.sales",           select_pyaterochka),
+        "vernyi":      ("iceberg.vernyi_silver.sales",                select_vernyi),
+        "bristol":     ("iceberg.bristol_silver.sales",               select_bristol),
+        "redwhite":    ("iceberg.redwhite_silver.sales",              select_redwhite),
         "magnit_new":  ("iceberg.magnit_new_silver.magnit_new_sales", select_magnit_new),
+        "samokat":     ("iceberg.samokat_silver.samokat_sales",       select_samokat),
     }
 
     # ============================================================
-    # 🆕 ШАГ 0: получаем уже загруженные file_name из ClickHouse
+    # ШАГ 0: получаем уже загруженные file_name из ClickHouse
     # ============================================================
     loaded_files = set()
     table_exists = False
@@ -769,7 +811,7 @@ try:
                 f"SELECT name FROM system.tables "
                 f"WHERE database='{CLICKHOUSE_DB}' AND name='{CLICKHOUSE_TABLE}'"
             ).result_rows
-            
+
             if tables:
                 table_exists = True
                 rows = client.query(
@@ -781,15 +823,14 @@ try:
                 print(f"✓ Уже в ClickHouse: {len(loaded_files):,} уникальных file_name")
             else:
                 print(f"⚠ Таблица {CLICKHOUSE_TABLE} не существует — первичная загрузка")
-            
+
             client.close()
         except Exception as e:
             print(f"⚠ Не удалось получить список загруженных файлов: {e}")
-            print(f"   Будем грузить ВСЁ")
             loaded_files = set()
 
     # ============================================================
-    # ШАГ 1: загрузка и унификация по сетям (с фильтром по file_name)
+    # ШАГ 1: загрузка и унификация по сетям
     # ============================================================
     print("\n" + "=" * 80)
     print("ЗАГРУЗКА И УНИФИКАЦИЯ ДАННЫХ ИЗ СЕТЕЙ")
@@ -805,7 +846,6 @@ try:
             unified = select_func(df)
 
             if INCREMENTAL_MODE and loaded_files:
-                # Получаем все уникальные file_name из этой сети
                 chain_files = {
                     r[0] for r in unified
                         .select("file_name").distinct().collect()
@@ -821,7 +861,6 @@ try:
                     print(f"  ⊘ {chain_name}: все {len(chain_files)} файлов уже загружены")
                     continue
 
-                # Оставляем только новые
                 unified = unified.filter(F.col("file_name").isin(list(new_files)))
                 print(f"  ✓ {chain_name}: +{len(new_files)} новых файлов "
                       f"(пропущено {len(skipped)})")
@@ -979,7 +1018,7 @@ try:
     final_count = client.query(
         f"SELECT count() FROM {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}"
     ).result_set[0][0]
-    
+
     chain_stats = client.query(f"""
         SELECT retail_chain, count() AS rows
         FROM {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}
@@ -997,7 +1036,7 @@ try:
     print(f"   Время:                  {elapsed:.1f}с")
     if elapsed > 0 and final_count > 0:
         print(f"   Скорость:               {final_count / elapsed:,.0f} стр/сек")
-    
+
     print(f"\n📈 По сетям:")
     for row in chain_stats:
         print(f"   {row[0]:<15} | {row[1]:>15,} строк")

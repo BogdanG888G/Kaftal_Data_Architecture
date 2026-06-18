@@ -7,7 +7,7 @@ from datetime import datetime
 # ============================================================
 # SPARK SESSION
 # ============================================================
-spark = SparkSession.builder.appName("Iceberg Magnit NEW ETL").getOrCreate()
+spark = SparkSession.builder.appName("Iceberg Samokat ETL").getOrCreate()
 print(f"✓ Версия Spark: {spark.version}")
 
 # ============================================================
@@ -24,16 +24,15 @@ s3 = boto3.client(
 # КОНСТАНТЫ
 # ============================================================
 RAW_BUCKET = "raw"
-FILE_PREFIX = "magnit_new_"
-CSV_ENCODING = "UTF-8"  # если файлы в cp1251, поменяй на windows-1251
+FILE_PREFIX = "samokat_"
 
-TARGET_TABLE = "iceberg.magnit_new_silver.magnit_new_sales"
+TARGET_TABLE = "iceberg.samokat_silver.samokat_sales"
 
 SILVER_COLUMNS = [
     "year", "month", "month_num", "retail_chain",
-    "store_code", "store_name", "format", "address",
-    "category_level_1", "category_level_2", "category_level_3",
-    "product_id", "product_name", "brand", "vendor", "barcode",
+    "city_name",
+    "category_level_1", "category_level_2", "category_level_3", "category_level_4",
+    "product_name", "vendor", "brand",
     "sales_quantity", "average_cost_price", "average_sell_price",
     "sales_amount_rub", "sales_cost_price",
     "file_name", "created_at", "updated_at", "period",
@@ -44,18 +43,14 @@ SILVER_TYPES = {
     "month": "string",
     "month_num": "int",
     "retail_chain": "string",
-    "store_code": "string",
-    "store_name": "string",
-    "format": "string",
-    "address": "string",
+    "city_name": "string",
     "category_level_1": "string",
     "category_level_2": "string",
     "category_level_3": "string",
-    "product_id": "string",
+    "category_level_4": "string",
     "product_name": "string",
-    "brand": "string",
     "vendor": "string",
-    "barcode": "string",
+    "brand": "string",
     "sales_quantity": "double",
     "average_cost_price": "double",
     "average_sell_price": "double",
@@ -68,51 +63,90 @@ SILVER_TYPES = {
 }
 
 COLUMN_RENAME_MAP = {
-    "Месяц": "month_num_raw",
-    "Год": "year_raw",
-    "Код": "store_code",
-    "Название магазина": "store_name",
-    "ФорматТТ": "format",
-    "Адрес": "address",
-    "Уровень 2": "category_level_1",
-    "Уровень 3": "category_level_2",
-    "Уровень 4": "category_level_3",
-    "Код позиции": "product_id",
+    "Самокат/МегаМаркет": "retail_chain_raw",
+    "Город": "city_name",
+    "Категория 1": "category_level_1",
+    "Категория 2": "category_level_2",
+    "Категория 3": "category_level_3",
+    "Категория 4": "category_level_4",
     "Наименование": "product_name",
-    "Бренд": "brand",
     "Производитель": "vendor",
-    "Штриховой код": "barcode",
-    "Продажи в шт.": "sales_quantity_raw",
-    "Себестоимость в руб.": "price_cost_raw",
-    "Продажи в руб.": "price_sell_raw",
+    "Бренд": "brand",
+    "Выручка": "sales_amount_raw",
+    "Количество продаж": "sales_quantity_raw",
+    "Себестоимость": "sales_cost_raw",
 }
 
-MONTH_NUM_TO_NAME = {
-    1: "Январь",
-    2: "Февраль",
-    3: "Март",
-    4: "Апрель",
-    5: "Май",
-    6: "Июнь",
-    7: "Июль",
-    8: "Август",
-    9: "Сентябрь",
-    10: "Октябрь",
-    11: "Ноябрь",
-    12: "Декабрь",
+MONTH_MAPPING = {
+    "january": "Январь", "february": "Февраль", "march": "Март",
+    "april": "Апрель", "may": "Май", "june": "Июнь",
+    "july": "Июль", "august": "Август", "september": "Сентябрь",
+    "october": "Октябрь", "november": "Ноябрь", "december": "Декабрь",
+    "jan": "Январь", "feb": "Февраль", "mar": "Март",
+    "apr": "Апрель", "may": "Май", "jun": "Июнь",
+    "jul": "Июль", "aug": "Август", "sep": "Сентябрь",
+    "oct": "Октябрь", "nov": "Ноябрь", "dec": "Декабрь",
 }
 
-month_map_expr = F.create_map(
-    *[item for pair in MONTH_NUM_TO_NAME.items() for item in (F.lit(pair[0]), F.lit(pair[1]))]
-)
+MONTH_NAME_TO_NUM = {
+    "Январь": 1, "Февраль": 2, "Март": 3,
+    "Апрель": 4, "Май": 5, "Июнь": 6,
+    "Июль": 7, "Август": 8, "Сентябрь": 9,
+    "Октябрь": 10, "Ноябрь": 11, "Декабрь": 12,
+}
+
+
+def clean_money(col_name):
+    """
+    Убирает из денежного поля:
+    - символ ₽
+    - пробелы (в том числе неразрывные)
+    - заменяет запятую на точку
+    """
+    return F.regexp_replace(
+        F.regexp_replace(
+            F.regexp_replace(
+                F.col(col_name).cast("string"),
+                "[₽\u20bd]", ""          # убираем знак рубля
+            ),
+            r"[\s\u00a0]+", ""           # убираем пробелы и неразрывные пробелы
+        ),
+        ",", "."                         # запятая → точка
+    )
+
+
+def parse_month_year_from_filename(filename: str):
+    """
+    Парсит месяц и год из имени файла вида samokat_may_2026.csv
+    """
+    parts = filename.replace(".csv", "").split("_")
+    month_str = None
+    parsed_year = None
+
+    for i, part in enumerate(parts):
+        mc = MONTH_MAPPING.get(part.lower())
+        if mc:
+            month_str = mc
+            if i + 1 < len(parts) and parts[i + 1].isdigit():
+                parsed_year = int(parts[i + 1])
+            break
+
+    if month_str is None:
+        month_str = "Неизвестно"
+    if parsed_year is None:
+        parsed_year = datetime.now().year
+
+    month_num = MONTH_NAME_TO_NUM.get(month_str, 1)
+    return month_str, month_num, parsed_year
+
 
 # ============================================================
 # BOOTSTRAP: NAMESPACE + TABLE
 # ============================================================
 def ensure_namespace_and_table():
-    print("Проверяем/создаём namespace и таблицу для Magnit NEW...")
+    print("Проверяем/создаём namespace и таблицу для Самоката...")
 
-    spark.sql("CREATE NAMESPACE IF NOT EXISTS iceberg.magnit_new_silver")
+    spark.sql("CREATE NAMESPACE IF NOT EXISTS iceberg.samokat_silver")
 
     spark.sql(f"""
         CREATE TABLE IF NOT EXISTS {TARGET_TABLE} (
@@ -120,18 +154,14 @@ def ensure_namespace_and_table():
             month STRING,
             month_num INT,
             retail_chain STRING,
-            store_code STRING,
-            store_name STRING,
-            format STRING,
-            address STRING,
+            city_name STRING,
             category_level_1 STRING,
             category_level_2 STRING,
             category_level_3 STRING,
-            product_id STRING,
+            category_level_4 STRING,
             product_name STRING,
-            brand STRING,
             vendor STRING,
-            barcode STRING,
+            brand STRING,
             sales_quantity DOUBLE,
             average_cost_price DOUBLE,
             average_sell_price DOUBLE,
@@ -144,16 +174,16 @@ def ensure_namespace_and_table():
         )
         USING iceberg
         PARTITIONED BY (retail_chain, year, month)
-        LOCATION 's3://warehouse/magnit_new_silver/magnit_new_sales'
+        LOCATION 's3://warehouse/samokat_silver/samokat_sales'
     """)
 
-    print("✓ Namespace и таблица Magnit NEW готовы")
+    print("✓ Namespace и таблица Самоката готовы")
 
 
 try:
     ensure_namespace_and_table()
 except Exception:
-    print("❌ Ошибка bootstrap для magnit_new_silver")
+    print("❌ Ошибка bootstrap для samokat_silver")
     traceback.print_exc()
     raise
 
@@ -178,17 +208,17 @@ else:
         if not file.endswith(".csv"):
             continue
 
-        file_name = f"s3a://{RAW_BUCKET}/{file}"
+        file_path = f"s3a://{RAW_BUCKET}/{file}"
 
         print("=" * 100)
-        print(f"Обработка: {file_name}")
+        print(f"Обработка: {file_path}")
         print("=" * 100)
 
         df = spark.read \
             .option("header", "true") \
             .option("sep", ";") \
-            .option("encoding", CSV_ENCODING) \
-            .csv(file_name, inferSchema=False)
+            .option("encoding", "UTF-8") \
+            .csv(file_path, inferSchema=False)
 
         print(f"✓ Прочитано строк: {df.count()}")
         print(f"Исходные колонки: {df.columns}")
@@ -196,9 +226,9 @@ else:
 
         # ШАГ 1: Чистим BOM и пробелы в заголовках
         for old_name in df.columns:
-            cleaned_name = old_name.replace("\ufeff", "").strip()
-            if cleaned_name != old_name:
-                df = df.withColumnRenamed(old_name, cleaned_name)
+            cleaned = old_name.replace("\ufeff", "").strip()
+            if cleaned != old_name:
+                df = df.withColumnRenamed(old_name, cleaned)
 
         # ШАГ 2: Переименование колонок
         for old_name in df.columns:
@@ -213,52 +243,55 @@ else:
                 F.when(F.trim(F.col(c)) == "", None).otherwise(F.trim(F.col(c)))
             )
 
-        # ШАГ 4: Служебные поля
-        df = df.withColumn("retail_chain", F.lit("Магнит"))
+        # ШАГ 4: retail_chain из колонки или дефолт
+        if "retail_chain_raw" in df.columns:
+            df = df.withColumn("retail_chain", F.trim(F.col("retail_chain_raw")))
+            df = df.drop("retail_chain_raw")
+        else:
+            df = df.withColumn("retail_chain", F.lit("Самокат"))
+
+        # ШАГ 5: Служебные поля
         df = df.withColumn("file_name", F.lit(file[:-4]))
         df = df.withColumn("created_at", F.lit(date_created))
         df = df.withColumn("updated_at", F.lit(date_created))
 
-        # ШАГ 5: Месяц / год / период из самого файла
-        df = df.withColumn("month_num", F.col("month_num_raw").cast("int"))
-        df = df.withColumn("year", F.col("year_raw").cast("int"))
-        df = df.withColumn("month", month_map_expr[F.col("month_num")])
+        # ШАГ 6: Месяц / год / период из имени файла
+        month_str, month_num, parsed_year = parse_month_year_from_filename(file)
 
-        df = df.withColumn(
-            "period",
-            F.to_date(
-                F.concat_ws(
-                    "-",
-                    F.col("year").cast("string"),
-                    F.lpad(F.col("month_num").cast("string"), 2, "0"),
-                    F.lit("01")
-                )
-            )
-        )
+        df = df.withColumn("month", F.lit(month_str))
+        df = df.withColumn("month_num", F.lit(month_num))
+        df = df.withColumn("year", F.lit(parsed_year))
 
-        # ШАГ 6: Простая подготовка чисел
-        for col_name in ["sales_quantity_raw", "price_cost_raw", "price_sell_raw"]:
+        period_str = f"{parsed_year}-{month_num:02d}-01"
+        df = df.withColumn("period", F.lit(period_str))
+
+        # ШАГ 7: Очистка денежных полей (убираем ₽, пробелы)
+        for col_name in ["sales_amount_raw", "sales_cost_raw"]:
+            if col_name in df.columns:
+                df = df.withColumn(col_name, clean_money(col_name))
+
+        for col_name in ["sales_quantity_raw"]:
             if col_name in df.columns:
                 df = df.withColumn(
                     col_name,
                     F.regexp_replace(
-                        F.regexp_replace(F.col(col_name).cast("string"), r"\s+", ""),
+                        F.regexp_replace(F.col(col_name).cast("string"), r"[\s\u00a0]+", ""),
                         ",", "."
                     )
                 )
 
-        # ШАГ 7: Перенос raw-полей в silver-поля
+        # ШАГ 8: Перенос raw → silver
+        df = df.withColumn("sales_amount_rub", F.col("sales_amount_raw"))
+        df = df.withColumn("sales_cost_price", F.col("sales_cost_raw"))
         df = df.withColumn("sales_quantity", F.col("sales_quantity_raw"))
-        df = df.withColumn("sales_cost_price", F.col("price_cost_raw"))
-        df = df.withColumn("sales_amount_rub", F.col("price_sell_raw"))
 
-        # ШАГ 8: Недостающие колонки
+        # ШАГ 9: Недостающие колонки
         remaining = set(SILVER_COLUMNS) - set(df.columns)
         print(f"Оставшиеся колонки (NULL): {remaining}")
         for col in remaining:
             df = df.withColumn(col, F.lit(None))
 
-        # ШАГ 9: Каст типов
+        # ШАГ 10: Каст типов
         for col_name in df.columns:
             dtype_str = SILVER_TYPES.get(col_name)
             if dtype_str:
@@ -270,10 +303,10 @@ else:
         print(f"Финальные колонки: {df.columns}")
         print("=" * 100)
 
-        # ШАГ 10: Финальный датафрейм
+        # ШАГ 11: Финальный датафрейм
         final_df = df.select(*SILVER_COLUMNS)
 
-        # ШАГ 11: Средние цены
+        # ШАГ 12: Средние цены
         final_df = final_df.withColumn(
             "average_sell_price",
             F.coalesce(
@@ -296,7 +329,7 @@ else:
             )
         )
 
-        # ШАГ 12: Проверка дубликатов и запись
+        # ШАГ 13: Проверка дубликатов и запись
         try:
             res = spark.sql(f"""
                 SELECT COUNT(*)
@@ -324,5 +357,5 @@ else:
         print("=" * 100)
         print()
 
-print("✅ Обработка Magnit NEW завершена!")
+print("✅ Обработка Самокат завершена!")
 spark.stop()

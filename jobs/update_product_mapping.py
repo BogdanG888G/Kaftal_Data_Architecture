@@ -31,6 +31,7 @@ TABLES = [
     ("vernyi_silver",      "iceberg.vernyi_silver.sales"),
     ("x5_silver",          "iceberg.x5_silver.sales"),
     ("magnit_new_silver",  "iceberg.magnit_new_silver.magnit_new_sales"),
+    ("samokat_silver",     "iceberg.samokat_silver.samokat_sales"),
 ]
 
 CLICKHOUSE_HOST = "clickhouse"
@@ -48,10 +49,6 @@ MIN_NAME_LENGTH = 3
 # ХЕЛПЕРЫ
 # ============================================================
 def get_products_from_table(table_name: str):
-    """
-    Пробуем взять product_name из таблицы.
-    Возвращает DataFrame с колонкой product_name или None.
-    """
     try:
         df = spark.sql(f"""
             SELECT DISTINCT product_name
@@ -67,7 +64,6 @@ def get_products_from_table(table_name: str):
 
 
 def clean_products(df):
-    """Очистка DataFrame с product_name."""
     df = df.filter(F.col("product_name").isNotNull())
     df = df.filter(F.trim(F.col("product_name")) != "")
     df = df.filter(F.length(F.trim(F.col("product_name"))) > MIN_NAME_LENGTH)
@@ -80,7 +76,6 @@ def clean_products(df):
 
 
 def ensure_clickhouse_table(client):
-    """Создаём таблицу если не существует."""
     client.command(f"""
         CREATE TABLE IF NOT EXISTS {CLICKHOUSE_TABLE} (
             original_name   String,
@@ -144,13 +139,11 @@ for name, cnt in stats.items():
     status = f"{cnt:,}" if cnt > 0 else "—"
     print(f"  • {name}: {status}")
 
-# Переводим в pandas для вставки в ClickHouse
 new_names_pd = all_products.toPandas()
 new_names_pd = new_names_pd.dropna(subset=["product_name"])
 new_names_pd["original_name"] = new_names_pd["product_name"].astype(str).str.strip()
 new_names_pd = new_names_pd.drop(columns=["product_name"])
 
-# Финальная очистка pandas
 new_names_pd = new_names_pd[~new_names_pd["original_name"].isin(["nan", "None", "", "NULL"])]
 new_names_pd = new_names_pd[new_names_pd["original_name"].str.len() > MIN_NAME_LENGTH]
 new_names_pd = new_names_pd.drop_duplicates(subset=["original_name"])
@@ -178,7 +171,6 @@ try:
 
     ensure_clickhouse_table(client)
 
-    # Получаем уже существующие названия
     existing_df = client.query_df(
         f"SELECT DISTINCT original_name FROM {CLICKHOUSE_TABLE}"
     )
@@ -189,7 +181,6 @@ try:
     )
     print(f"✓ Существующих товаров в справочнике: {len(existing_names):,}")
 
-    # Только новые
     new_ones = new_names_pd[~new_names_pd["original_name"].isin(existing_names)].copy()
     cnt_new = len(new_ones)
     print(f"✓ Новых товаров для добавления: {cnt_new:,}")
@@ -210,7 +201,6 @@ try:
     else:
         print("✅ Новых товаров нет — справочник актуален")
 
-    # Итоговая статистика
     total_after = client.query_df(
         f"SELECT COUNT(*) AS cnt FROM {CLICKHOUSE_TABLE}"
     )

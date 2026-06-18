@@ -14,20 +14,15 @@ import shutil
 LOCAL_DATA_DIR = '/opt/airflow/data'
 LOCAL_ARCHIVE_DIR = '/opt/airflow/archive'
 RAW_BUCKET = 'raw'
-FILE_PREFIX = 'magnit_new'
+FILE_PREFIX = 'samokat'
 
 
 def send_telegram(text: str):
     token = Variable.get('TELEGRAM_TOKEN')
     chat_id = Variable.get('TELEGRAM_CHAT_ID')
-
     requests.post(
         url=f'https://api.telegram.org/bot{token}/sendMessage',
-        data={
-            'chat_id': chat_id,
-            'text': text,
-            'parse_mode': 'HTML'
-        },
+        data={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'},
         timeout=15
     )
 
@@ -37,7 +32,6 @@ def telegram_alert(context):
     task_id = context['ti'].task_id
     ds = context['ds']
     error = context.get('exception')
-
     message = (
         f'Ошибка <b>{error}</b>\n'
         f'Даг: <b>{dag_id}</b>\n'
@@ -48,16 +42,16 @@ def telegram_alert(context):
 
 
 def telegram_success(context):
-    send_telegram('Пайплайн по Магниту NEW format успешно завершился ✅')
+    send_telegram('Пайплайн по Самокату успешно завершился ✅')
 
 
 @dag(
-    dag_id='magnit_new_etl',
-    description='Автоматизация обработки данных для нового формата Магнита',
+    dag_id='samokat_etl',
+    description='Автоматизация обработки данных Самоката',
     catchup=False,
     start_date=datetime.datetime(year=2026, month=4, day=1),
     schedule='@daily',
-    tags=['Magnit', 'S3', 'Spark', 'NEW'],
+    tags=['Samokat', 'S3', 'Spark', 'Konditerka'],
     on_success_callback=telegram_success
 )
 def pipeline():
@@ -68,17 +62,15 @@ def pipeline():
         filepath=f'{LOCAL_DATA_DIR}/{FILE_PREFIX}*.csv',
         mode='reschedule',
         poke_interval=60,
-        timeout=30,
+        timeout=60 * 60 * 12,
         on_failure_callback=telegram_alert,
     )
 
     @task(on_failure_callback=telegram_alert, trigger_rule=TriggerRule.ALL_SUCCESS)
     def load_to_raw_s3():
         os.makedirs(LOCAL_ARCHIVE_DIR, exist_ok=True)
-
         s3 = S3Hook(aws_conn_id='s3_connect')
         files = sorted(os.listdir(LOCAL_DATA_DIR))
-
         loaded_any = False
 
         for file_name in files:
@@ -91,7 +83,7 @@ def pipeline():
 
             try:
                 if s3.check_for_key(key=file_name, bucket_name=RAW_BUCKET):
-                    logging.warning(f'⊘ Файл {file_name} уже есть в bucket {RAW_BUCKET}, пропускаем загрузку')
+                    logging.warning(f'⊘ Файл {file_name} уже есть в bucket {RAW_BUCKET}, пропускаем')
                 else:
                     s3.load_file(
                         filename=local_path,
@@ -103,7 +95,6 @@ def pipeline():
 
                 shutil.move(local_path, archive_path)
                 logging.info(f'📦 Архивировали {file_name}')
-
             except Exception as e:
                 logging.error(f'❌ Ошибка при обработке файла {file_name}: {e}')
                 raise
@@ -115,7 +106,7 @@ def pipeline():
         task_id='spark_processing',
         conn_id='spark_connection',
         trigger_rule=TriggerRule.ALL_DONE,
-        application='jobs/magnit_new_spark_processing.py',
+        application='jobs/samokat_spark_processing.py',
         on_failure_callback=telegram_alert,
         deploy_mode='client',
         conf={
@@ -137,7 +128,6 @@ def pipeline():
             'spark.sql.catalog.iceberg.s3.path-style-access': 'true',
             'spark.sql.catalog.iceberg.s3.ssl-enabled': 'false',
             'spark.sql.catalog.iceberg.client.region': 'us-east-1',
-
             'spark.hadoop.fs.s3a.endpoint': 'http://minio:9000',
             'spark.hadoop.fs.s3a.access.key': 'minioadmin',
             'spark.hadoop.fs.s3a.secret.key': 'minioadmin',
