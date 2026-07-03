@@ -7,3 +7,6 @@ data/*.xlsx
 data/*.ipynb*
 archive/
 .venv/
+ai-agent/.env
+ai-agent/__pycache__/
+ai-agent/app/__pycache__/

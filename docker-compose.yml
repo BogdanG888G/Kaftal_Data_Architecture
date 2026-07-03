@@ -293,6 +293,20 @@ services:
       - default
     restart: unless-stopped
 
+  ai-agent:
+    build:
+      context: ./ai-agent
+      dockerfile: Dockerfile
+    container_name: ai-agent
+    ports:
+      - "8501:8501"
+    env_file:
+      - ./ai-agent/.env
+    depends_on:
+      - clickhouse
+    networks:
+      - default
+    restart: unless-stopped
 
 volumes:
   postgres-db-volume:
