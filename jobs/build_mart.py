@@ -637,6 +637,49 @@ def select_bristol(df):
         F.col("period").cast("string").alias("date"),
     )
 
+def select_globus(df):
+    return df.select(
+        F.col("year").cast("int").alias("year"),
+        F.col("month").alias("month"),
+        F.col("retail_chain").alias("retail_chain"),
+        F.lit("").alias("region_name"),
+        F.lit("").alias("city_name"),
+        F.lit("").alias("address"),
+        F.col("store_code").alias("store_code"),
+        F.lit("").alias("store_name"),
+        F.lit("").alias("store_format"),
+        F.lit("").alias("product_category_2"),
+        F.lit("").alias("product_category_3"),
+        F.lit("").alias("product_category_4"),
+        F.lit("").alias("product_category_5"),
+        F.col("product_id").alias("product_id"),
+        F.col("product_name").alias("product_name_search"),
+        F.lit(None).cast("string").alias("product_uni_name"),
+        F.lit("").alias("brand"),
+        F.lit("").alias("vendor"),
+        F.lit("").alias("flavor"),
+        F.lit("").alias("weight_grams"),
+        F.lit("").alias("barcode"),
+        F.lit("").alias("manufacturer"),
+        F.col("sales_quantity").cast("int").alias("sales_quantity"),
+        F.col("sales_amount_rub").cast("double").alias("sales_amount_rub"),
+        F.col("sales_cost_price").cast("double").alias("sales_cost_price"),
+        F.lit(None).cast("double").alias("sales_kg"),
+        F.lit(None).cast("double").alias("sales_tons"),
+        F.col("average_cost_price").cast("double").alias("average_cost_price"),
+        F.col("average_sell_price").cast("double").alias("average_sell_price"),
+        F.col("margin_rub").cast("double").alias("margin_rub"),
+        F.lit(None).cast("double").alias("margin_pct"),
+        F.lit(None).cast("double").alias("cost_price_rub"),
+        F.lit(None).cast("double").alias("max_sell_price"),
+        F.lit(None).cast("double").alias("max_cost_price"),
+        F.lit(None).cast("int").alias("stock_qty"),
+        F.lit(None).cast("double").alias("stock_rub"),
+        F.lit(None).cast("double").alias("promo_sales_rub"),
+        F.lit(None).cast("int").alias("week_num"),
+        F.col("file_name").alias("file_name"),
+        F.col("period").cast("string").alias("date"),
+    )
 
 def select_redwhite(df):
     return df.select(
@@ -792,6 +835,7 @@ try:
         "redwhite":    ("iceberg.redwhite_silver.sales",              select_redwhite),
         "magnit_new":  ("iceberg.magnit_new_silver.magnit_new_sales", select_magnit_new),
         "samokat":     ("iceberg.samokat_silver.samokat_sales",       select_samokat),
+        "globus":      ("iceberg.globus_silver.sales",                select_globus),
     }
 
     # ============================================================

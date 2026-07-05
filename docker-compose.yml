@@ -40,6 +40,7 @@ services:
 
   postgres:
     image: postgres:16
+    container_name: postgres
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
@@ -47,13 +48,14 @@ services:
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
     ports:
-      - '5433:5432'
+      - '127.0.0.1:5433:5432'
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
-      interval: 90s
-      retries: 5
-      start_period: 5s
-    restart: always
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]  # <--- ИСПРАВЛЕНО
+      interval: 10s  # <--- ИСПРАВЛЕНО (было 90s)
+      timeout: 5s
+      retries: 10  # <--- УВЕЛИЧЕНО
+      start_period: 10s
+    restart: unless-stopped  # <--- ИСПРАВЛЕНО (было always)
 
   minio:
     image: minio/minio:latest
@@ -193,6 +195,8 @@ services:
       - SUPERSET_CONFIG_PATH=/app/superset_config.py
     volumes:
       - ./superset_config.py:/app/superset_config.py
+      - superset-data:/app/superset_home  # <--- ДОБАВЛЕНО для сохранения дашбордов
+      - ./superset_dashboards:/app/dashboards  # <--- ДОБАВЛЕНО для импорта дашбордов
     command: >
       bash -c "
         superset db upgrade &&
@@ -310,9 +314,12 @@ services:
 
 volumes:
   postgres-db-volume:
+    name: postgres-db-volume
   minio-data:
   ivy-cache:        
   spark-jars:       
   clickhouse-data:
   prometheus-data:
   grafana-data:
+  superset-data:
+    name: superset-data

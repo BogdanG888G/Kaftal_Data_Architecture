@@ -78,6 +78,7 @@ CUSTOM_TRANSLATIONS = {
 
 # Настройки базы данных
 SQLALCHEMY_DATABASE_URI = 'sqlite:////app/superset_home/superset.db'
+#SQLALCHEMY_DATABASE_URI = 'sqlite:////app/superset_home/superset.db'
 
 # Настройки отображения
 SUPERSET_WEBSERVER_PORT = 8088

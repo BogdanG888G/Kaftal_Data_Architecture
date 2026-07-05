@@ -1,33 +1,57 @@
-SYSTEM_PROMPT = """
-Ты опытный SQL-аналитик по ClickHouse.
+"""Построение системного промпта для LLM."""
+from metadata import format_columns_for_prompt, BUSINESS_GLOSSARY, COMMON_RULES
+from examples import format_examples_for_prompt
 
-Твоя задача:
-По вопросу пользователя на русском языке составить корректный SQL-запрос к ClickHouse.
 
-Правила:
-1. Возвращай ТОЛЬКО SQL. Без markdown, без ```sql, без объяснений.
-2. Разрешены только SELECT-запросы.
-3. Нельзя использовать INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE.
-4. Всегда добавляй LIMIT, если пользователь не просит агрегат по малому числу групп.
-5. Максимальный LIMIT — 1000.
-6. Для топов используй ORDER BY ... DESC LIMIT N.
-7. Для продаж используй SUM(sales_amount_rub).
-8. Для количества используй SUM(sales_quantity).
-9. Для себестоимости используй SUM(sales_cost_price).
-10. Для средней цены используй SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0).
-11. Для маржи, если margin_rub пустой, считай как SUM(sales_amount_rub) - SUM(sales_cost_price).
-12. Используй только таблицу из схемы ниже.
-13. Если спрашивают по месяцам, используй поля year и month или toStartOfMonth(date).
-14. Если спрашивают по неделям, используй week_num.
-15. Если спрашивают по дате, поле называется date.
+SYSTEM_PROMPT_TEMPLATE = """Ты — опытный SQL-аналитик по ClickHouse.
+Работаешь с витриной продаж чипсов и снеков в 19 розничных сетях России.
 
-Схема:
 {schema}
 
-Примеры данных:
-{sample}
+{glossary}
+
+{rules}
+
+{examples}
+
+Отвечай ТОЛЬКО одним SQL-запросом. Никакого другого текста, никаких пояснений, никакой обёртки ```sql.
+Только чистый SQL с одним завершающим переносом строки.
 """
 
 
-def build_prompt(schema: str, sample: str) -> str:
-    return SYSTEM_PROMPT.format(schema=schema, sample=sample)
+CORRECTION_PROMPT_TEMPLATE = """Ты сгенерировал SQL, но при выполнении в ClickHouse произошла ошибка.
+Твоя задача: исправить SQL так, чтобы он выполнился корректно.
+
+Оригинальный вопрос пользователя:
+{question}
+
+Твой предыдущий SQL:
+{prev_sql}
+
+Ошибка ClickHouse:
+{error}
+
+Правила те же, что и раньше. Верни только исправленный SQL без объяснений.
+"""
+
+
+def build_system_prompt(examples_text: str = None) -> str:
+    """Собирает системный промпт."""
+    if examples_text is None:
+        examples_text = format_examples_for_prompt(limit=8)
+
+    return SYSTEM_PROMPT_TEMPLATE.format(
+        schema=format_columns_for_prompt(),
+        glossary=BUSINESS_GLOSSARY,
+        rules=COMMON_RULES,
+        examples=examples_text,
+    )
+
+
+def build_correction_prompt(question: str, prev_sql: str, error: str) -> str:
+    """Промпт для второй попытки после ошибки."""
+    return CORRECTION_PROMPT_TEMPLATE.format(
+        question=question,
+        prev_sql=prev_sql,
+        error=str(error)[:500],
+    )

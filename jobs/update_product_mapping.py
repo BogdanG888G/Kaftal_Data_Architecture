@@ -32,6 +32,7 @@ TABLES = [
     ("x5_silver",          "iceberg.x5_silver.sales"),
     ("magnit_new_silver",  "iceberg.magnit_new_silver.magnit_new_sales"),
     ("samokat_silver",     "iceberg.samokat_silver.samokat_sales"),
+    ("globus_silver", "iceberg.globus_silver.sales")
 ]
 
 CLICKHOUSE_HOST = "clickhouse"
