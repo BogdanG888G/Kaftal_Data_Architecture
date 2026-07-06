@@ -202,7 +202,7 @@ LIMIT 20""",
         "question": "Товары весом 160 грамм",
         "sql": """SELECT product_name, round(SUM(sales_amount_rub), 2) AS revenue
 FROM sales_mart
-WHERE toFloat64OrNull(weight_grams) = 160
+WHERE toInt32(toFloat64OrZero(toString(weight_grams))) = 160
 GROUP BY product_name
 ORDER BY revenue DESC
 LIMIT 20""",
@@ -286,17 +286,77 @@ LIMIT 10""",
        max(date) AS max_date
 FROM sales_mart""",
     },
+
+    # === МАГНИТ ===
+    {
+        "question": "Магнит ГМ 120 грамм картофельные чипсы вкусы по регионам с кол-вом ТТ",
+        "sql": """SELECT 
+    ifNull(trim(region_name), 'Не указано') AS region,
+    ifNull(flavor, 'Не указано') AS flavor,
+    ifNull(brand, 'Не указано') AS brand,
+    COUNT(DISTINCT address) AS tt_count,
+    round(SUM(sales_amount_rub), 2) AS revenue,
+    SUM(sales_quantity) AS qty,
+    round(SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0), 2) AS avg_price
+FROM sales_mart
+WHERE retail_chain = 'Магнит'
+  AND store_format = 'ГМ'
+  AND chip_type = 'Картофельные чипсы'
+  AND toInt32(toFloat64OrZero(toString(weight_grams))) = 120
+  AND year = 2026
+GROUP BY region, flavor, brand
+HAVING revenue > 0
+ORDER BY region, revenue DESC
+LIMIT 500""",
+    },
+    {
+        "question": "Магнит ГМ 120г топ регионов по количеству торговых точек",
+        "sql": """SELECT 
+    ifNull(trim(region_name), 'Не указано') AS region,
+    COUNT(DISTINCT address) AS tt_count,
+    round(SUM(sales_amount_rub), 2) AS revenue
+FROM sales_mart
+WHERE retail_chain = 'Магнит'
+  AND store_format = 'ГМ'
+  AND toInt32(toFloat64OrZero(toString(weight_grams))) = 120
+  AND chip_type = 'Картофельные чипсы'
+  AND year = 2026
+GROUP BY region
+ORDER BY tt_count DESC
+LIMIT 25""",
+    },
+    {
+        "question": "Магнит ГМ 120г приоритетные вкусы Сметана и лук Морепродукты Томат по регионам",
+        "sql": """SELECT 
+    ifNull(trim(region_name), 'Не указано') AS region,
+    flavor,
+    COUNT(DISTINCT address) AS tt_count,
+    round(SUM(sales_amount_rub), 2) AS revenue,
+    SUM(sales_quantity) AS qty
+FROM sales_mart
+WHERE retail_chain = 'Магнит'
+  AND store_format = 'ГМ'
+  AND toInt32(toFloat64OrZero(toString(weight_grams))) = 120
+  AND chip_type = 'Картофельные чипсы'
+  AND year = 2026
+  AND flavor IN ('Сметана и лук', 'Морепродукты', 'Томат', 'Лосось', 'Сметана')
+GROUP BY region, flavor
+ORDER BY flavor, revenue DESC
+LIMIT 200""",
+    },
+
+    # === ЦЕНА ЗА ГРАММ ===
     {
         "question": "Цена за 1 грамм по брендам для картофельных чипсов",
         "sql": """SELECT
     brand,
-    round(SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0) / NULLIF(toFloat64OrNull(weight_grams), 0), 3) AS price_per_gram_rub,
-    round(SUM(sales_cost_price) / NULLIF(SUM(sales_quantity), 0) / NULLIF(toFloat64OrNull(weight_grams), 0), 3) AS cost_per_gram_rub,
+    round(SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0) / NULLIF(toFloat64OrZero(toString(weight_grams)), 0), 3) AS price_per_gram_rub,
+    round(SUM(sales_cost_price) / NULLIF(SUM(sales_quantity), 0) / NULLIF(toFloat64OrZero(toString(weight_grams)), 0), 3) AS cost_per_gram_rub,
     round(SUM(sales_amount_rub), 2) AS revenue
 FROM sales_mart
 WHERE chip_type = 'Картофельные чипсы'
   AND brand IS NOT NULL AND brand != ''
-  AND toFloat64OrNull(weight_grams) > 0
+  AND toFloat64OrZero(toString(weight_grams)) > 0
 GROUP BY brand, weight_grams
 HAVING revenue > 100000
 ORDER BY revenue DESC
@@ -307,16 +367,16 @@ LIMIT 30""",
     {
         "question": "Нормализованная цена к 120 грамм по граммовкам для картофельных чипсов 2026",
         "sql": """SELECT
-    toInt32OrNull(weight_grams) AS grams,
+    toInt32(toFloat64OrZero(toString(weight_grams))) AS grams,
     round(
         (SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0))
-        / NULLIF(toFloat64OrNull(weight_grams), 0)
+        / NULLIF(toFloat64OrZero(toString(weight_grams)), 0)
         * 120,
         2
     ) AS price_normalized_120g,
     round(
         (SUM(sales_cost_price) / NULLIF(SUM(sales_quantity), 0))
-        / NULLIF(toFloat64OrNull(weight_grams), 0)
+        / NULLIF(toFloat64OrZero(toString(weight_grams)), 0)
         * 120,
         2
     ) AS cost_normalized_120g,
@@ -326,7 +386,7 @@ LIMIT 30""",
 FROM sales_mart
 WHERE chip_type = 'Картофельные чипсы'
   AND year = 2026
-  AND toInt32OrNull(weight_grams) IN (70, 120, 140, 180, 220, 225, 250)
+  AND toInt32(toFloat64OrZero(toString(weight_grams))) IN (70, 120, 140, 180, 220, 225, 250)
 GROUP BY grams, weight_grams
 ORDER BY grams""",
     },
@@ -335,15 +395,15 @@ ORDER BY grams""",
     {
         "question": "Картофельные чипсы 70 120 140 180 220 225 250 грамм: цена, себестоимость, вкусы, бренды, цена за грамм",
         "sql": """SELECT
-    toInt32OrNull(weight_grams) AS grams,
+    toInt32(toFloat64OrZero(toString(weight_grams))) AS grams,
     brand,
     flavor,
     round(SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0), 2) AS avg_sell_price,
     round(SUM(sales_cost_price) / NULLIF(SUM(sales_quantity), 0), 2) AS avg_cost_price,
-    round(SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0) / NULLIF(toFloat64OrNull(weight_grams), 0), 3) AS price_per_gram,
+    round(SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0) / NULLIF(toFloat64OrZero(toString(weight_grams)), 0), 3) AS price_per_gram,
     round(
         (SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0))
-        / NULLIF(toFloat64OrNull(weight_grams), 0)
+        / NULLIF(toFloat64OrZero(toString(weight_grams)), 0)
         * 120,
         2
     ) AS price_normalized_120g,
@@ -351,7 +411,7 @@ ORDER BY grams""",
     SUM(sales_quantity) AS qty
 FROM sales_mart
 WHERE chip_type = 'Картофельные чипсы'
-  AND toInt32OrNull(weight_grams) IN (70, 120, 140, 180, 220, 225, 250)
+  AND toInt32(toFloat64OrZero(toString(weight_grams))) IN (70, 120, 140, 180, 220, 225, 250)
   AND brand IS NOT NULL AND brand != ''
   AND flavor IS NOT NULL AND flavor != ''
 GROUP BY grams, brand, flavor, weight_grams
@@ -365,11 +425,11 @@ LIMIT 500""",
         "question": "Топ-20 самых дорогих брендов по цене за грамм",
         "sql": """SELECT
     brand,
-    round(avg(sales_amount_rub / NULLIF(sales_quantity, 0) / NULLIF(toFloat64OrNull(weight_grams), 0)), 3) AS avg_price_per_gram,
+    round(avg(sales_amount_rub / NULLIF(sales_quantity, 0) / NULLIF(toFloat64OrZero(toString(weight_grams)), 0)), 3) AS avg_price_per_gram,
     round(SUM(sales_amount_rub), 2) AS revenue
 FROM sales_mart
 WHERE brand IS NOT NULL AND brand != ''
-  AND toFloat64OrNull(weight_grams) > 0
+  AND toFloat64OrZero(toString(weight_grams)) > 0
   AND sales_quantity > 0
 GROUP BY brand
 HAVING revenue > 100000

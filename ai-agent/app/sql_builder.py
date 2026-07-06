@@ -33,11 +33,11 @@ def build_where(filters: dict, extra_filter: dict = None) -> str:
 
     if all_filters.get("weight_grams") is not None:
         w = int(all_filters["weight_grams"])
-        conditions.append(f"toInt32OrNull(weight_grams) = {w}")
+        conditions.append(f"toInt32(toFloat64OrZero(toString(weight_grams))) = {w}")
 
     if all_filters.get("weight_grams_list"):
         grams = ", ".join(str(int(g)) for g in all_filters["weight_grams_list"])
-        conditions.append(f"toInt32OrNull(weight_grams) IN ({grams})")
+        conditions.append(f"toInt32(toFloat64OrZero(toString(weight_grams))) IN ({grams})")
 
     if all_filters.get("brands"):
         vals = ", ".join(f"'{escape(b)}'" for b in all_filters["brands"])
@@ -131,7 +131,7 @@ def sql_time_series(
     time_col: str = "year_month",
     extra_filter: dict = None,
 ) -> str:
-    """Динамика по времени."""
+    """Динамика по времени с несколькими метриками."""
     where = build_where(filters, extra_filter)
 
     if time_col == "year_month":
@@ -158,7 +158,8 @@ def sql_time_series(
     return f"""SELECT
     {select_time},
     round(SUM(sales_amount_rub), 2) AS revenue,
-    SUM(sales_quantity) AS qty
+    SUM(sales_quantity) AS qty,
+    round(SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0), 2) AS avg_price
 FROM {TABLE}
 {where}
 GROUP BY {group_time}
@@ -196,11 +197,9 @@ GROUP BY {group_str}
 ORDER BY revenue DESC
 LIMIT {limit}"""
 
-
 def build_sql_for_section(section: dict, filters: dict) -> str:
     """
-    Главная функция: строит SQL для секции.
-    Использует готовый шаблон, если возможно.
+    Строит SQL для секции. Использует готовый шаблон.
     """
     chart_type = section.get("chart_type", "bar")
     group_by = section.get("group_by") or []
@@ -209,6 +208,14 @@ def build_sql_for_section(section: dict, filters: dict) -> str:
     # === KPI ===
     if chart_type == "kpi" or not group_by:
         return sql_kpi({**filters, **extra_filter})
+
+    # === Grouped bar — цена vs себестоимость по бренду ===
+    if chart_type == "grouped_bar":
+        return sql_price_vs_cost(filters, group_by[0], extra_filter)
+
+    # === Lollipop — топ SKU (обычно brand + product_name) ===
+    if chart_type == "lollipop":
+        return sql_top_sku(filters, group_by, limit=20, extra_filter=extra_filter)
 
     # === Time series ===
     time_cols = {"date", "year", "month", "week_num", "month_start"}
@@ -221,7 +228,6 @@ def build_sql_for_section(section: dict, filters: dict) -> str:
             return sql_time_series(filters, "month_start", extra_filter)
         if "year" in group_by and "month" in group_by:
             return sql_time_series(filters, "year_month", extra_filter)
-        # fallback
         return sql_time_series(filters, group_by[0], extra_filter)
 
     # === Один разрез ===
@@ -231,3 +237,48 @@ def build_sql_for_section(section: dict, filters: dict) -> str:
 
     # === Несколько разрезов ===
     return sql_multi_group(filters, group_by, limit=200, extra_filter=extra_filter)
+
+
+def sql_price_vs_cost(filters: dict, group_col: str, extra_filter: dict = None) -> str:
+    """Grouped bar: цена продажи vs себестоимость."""
+    where = build_where(filters, extra_filter)
+    null_filter = f"AND {group_col} IS NOT NULL AND toString({group_col}) != ''"
+    if where:
+        where = where + "\n  " + null_filter
+    else:
+        where = "WHERE " + null_filter.lstrip("AND ").strip()
+
+    return f"""SELECT
+    {group_col},
+    round(SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0), 2) AS avg_sell_price,
+    round(SUM(sales_cost_price) / NULLIF(SUM(sales_quantity), 0), 2) AS avg_cost_price,
+    round(SUM(sales_amount_rub), 2) AS revenue
+FROM {TABLE}
+{where}
+GROUP BY {group_col}
+ORDER BY revenue DESC
+LIMIT 15"""
+
+
+def sql_top_sku(filters: dict, group_by: list, limit: int = 20, extra_filter: dict = None) -> str:
+    """Lollipop: топ SKU с несколькими группировками."""
+    where = build_where(filters, extra_filter)
+    group_str = ", ".join(group_by)
+
+    if group_by:
+        main_col = group_by[0]
+        null_filter = f"{main_col} IS NOT NULL AND toString({main_col}) != ''"
+        if where:
+            where = where + f"\n  AND {null_filter}"
+        else:
+            where = f"WHERE {null_filter}"
+
+    return f"""SELECT
+    {group_str},
+    round(SUM(sales_amount_rub), 2) AS revenue,
+    SUM(sales_quantity) AS qty
+FROM {TABLE}
+{where}
+GROUP BY {group_str}
+ORDER BY revenue DESC
+LIMIT {limit}"""

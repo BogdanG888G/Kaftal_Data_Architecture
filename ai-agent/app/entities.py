@@ -2,7 +2,7 @@
 import re
 from functools import lru_cache
 from database import db
-
+from product_rag import find_flavors_in_mapping, get_all_brands as get_mapping_brands
 
 # Словари синонимов (расширяй по мере обнаружения)
 BRAND_SYNONYMS = {
@@ -262,11 +262,46 @@ STOP_WORDS = {
     "самокату", "окею", "верному",
 }
 
+# Контекстные маркеры — если рядом есть эти слова, категория точно определяется
+CHAIN_MARKERS = [
+    r"\bсет[иьяе]\b", r"\bритейлер[аеу]?\b", r"\bмагазин[ае]?\s+сет[иья]",
+    r"\bторгов[ыой][йх]?\s+сет[иья]", r"\bсеть\b",
+]
+
+BRAND_MARKERS = [
+    r"\bбренд[аеы]?\b", r"\bмарк[аеиу]\b", r"\bтм\b", r"\bторгов[ая][яй]\s+марк[аеу]",
+]
+
+FLAVOR_MARKERS = [
+    r"\bвкус[аеы]?\b", r"\bаромат[аеы]?\b",
+]
+
+FLAVOR_KEYWORDS = [
+    "краб", "камчатск", "сметан", "кетчуп", "томат", "паприк",
+    "чеддер", "бекон", "чеснок", "грибы", "стейк", "барбекю",
+    "лосось", "морепрод", "сыр", "соль", "перец", "лук",
+]
+
+
+def _has_flavor_keyword(question: str) -> bool:
+    """Проверяет есть ли в вопросе ключевые слова про вкусы."""
+    q_lower = question.lower()
+    return any(kw in q_lower for kw in FLAVOR_KEYWORDS)
+
+def _has_marker(question: str, markers: list) -> bool:
+    """Проверяет, есть ли в вопросе хоть один из маркеров."""
+    q_lower = question.lower()
+    return any(re.search(pat, q_lower) for pat in markers)
 
 def extract_entities(question: str) -> dict:
     """
     Из вопроса пользователя извлекает возможные сущности:
     бренды, сети, вкусы, форматы, регионы, типы чипсов.
+
+    Логика:
+    1. Проверяем словари синонимов — они надёжны.
+    2. Если значение подходит и для сети, и для бренда — смотрим контекст.
+    3. Fuzzy — только для явно не-стоп-слов и с высоким порогом.
     """
     q_lower = question.lower()
 
@@ -279,13 +314,17 @@ def extract_entities(question: str) -> dict:
         "regions": [],
     }
 
-    # 1. Проверяем словари синонимов (это надёжно)
+    # Определяем контекст
+    has_chain_marker = _has_marker(question, CHAIN_MARKERS)
+    has_brand_marker = _has_marker(question, BRAND_MARKERS)
+    has_flavor_marker = _has_marker(question, FLAVOR_MARKERS)
+
+    # === СЛОВАРИ (надёжно) ===
     for key, values in BRAND_SYNONYMS.items():
         if key in q_lower:
             entities["brands"].extend(values)
 
     for key, values in CHAIN_SYNONYMS.items():
-        # Целые слова для сетей
         if re.search(rf"\b{re.escape(key)}\b", q_lower):
             entities["chains"].extend(values)
 
@@ -301,24 +340,39 @@ def extract_entities(question: str) -> dict:
         if key in q_lower:
             entities["chip_types"].extend(values)
 
-    # 2. Fuzzy fallback — ТОЛЬКО для слов длиннее 4 символов и НЕ в стоп-листе
-    # И ТОЛЬКО если из словарей ничего не нашли для этой категории
+    # === CONTEXT-BASED РЕЗОЛЮЦИЯ ===
+    # Если есть маркер сети, но нет маркера бренда — приоритет сети
+    # Убираем из brands те значения, что тоже есть в chains
+    if has_chain_marker and not has_brand_marker:
+        chains_lower = {c.lower() for c in entities["chains"]}
+        entities["brands"] = [b for b in entities["brands"] if b.lower() not in chains_lower]
+
+    # Если есть маркер бренда, но нет маркера сети — приоритет бренда
+    if has_brand_marker and not has_chain_marker:
+        brands_lower = {b.lower() for b in entities["brands"]}
+        entities["chains"] = [c for c in entities["chains"] if c.lower() not in brands_lower]
+
+    # === FUZZY FALLBACK ===
+    # Только для слов длиннее 4 символов и НЕ в стоп-листе
     words = re.findall(r"[а-яА-Яa-zA-Z']{4,}", question)
     candidate_words = [
         w for w in words
         if w.lower() not in STOP_WORDS and len(w) >= 4
     ]
 
-    # Fuzzy для брендов — только с очень высоким порогом
-    if not entities["brands"] and candidate_words:
+    # Fuzzy для брендов — с очень высоким порогом
+    # НЕ запускаем, если есть маркер сети (значит бренд не важен)
+    if not entities["brands"] and candidate_words and not has_chain_marker:
         all_brands = load_brands()
         found = set()
         for word in candidate_words:
-            matches = _fuzzy_match(word, all_brands, threshold=92, limit=3)
+            matches = _fuzzy_match(word, all_brands, threshold=93, limit=3)
             found.update(matches)
-        entities["brands"] = list(found)[:5]
+        # Убираем совпадения с уже найденными сетями
+        chains_lower = {c.lower() for c in entities["chains"]}
+        entities["brands"] = [b for b in found if b.lower() not in chains_lower][:5]
 
-    # Fuzzy для сетей — тоже высокий порог
+    # Fuzzy для сетей
     if not entities["chains"] and candidate_words:
         all_chains = load_chains()
         found = set()
@@ -327,7 +381,26 @@ def extract_entities(question: str) -> dict:
             found.update(matches)
         entities["chains"] = list(found)[:3]
 
-    # Дедупликация с сохранением порядка
+    # Fuzzy для вкусов — если есть маркер вкуса ИЛИ явное слово-вкус в тексте
+    if not entities["flavors"] and (has_flavor_marker or _has_flavor_keyword(question)):
+        # Сначала пробуем найти в product_mapping (там точные названия)
+        try:
+            mapping_matches = find_flavors_in_mapping(question)
+            if mapping_matches:
+                entities["flavors"] = mapping_matches[:5]
+        except Exception as e:
+            print(f"[ENTITIES] product_rag failed: {e}")
+
+        # Fallback — fuzzy по БД
+        if not entities["flavors"] and candidate_words:
+            all_flavors = load_flavors()
+            found = set()
+            for word in candidate_words:
+                matches = _fuzzy_match(word, all_flavors, threshold=88, limit=3)
+                found.update(matches)
+            entities["flavors"] = list(found)[:5]
+
+    # Дедупликация
     for k in entities:
         entities[k] = list(dict.fromkeys(entities[k]))
 

@@ -1,10 +1,12 @@
-"""Логика text-to-SQL агента с self-correction, entity + metrics enrichment."""
+"""Логика text-to-SQL агента с self-correction, entity + metrics + product RAG."""
 import re
+
 from database import db
 from llm import llm
 from prompts import build_system_prompt, build_correction_prompt
 from entities import enrich_question
 from metrics import enrich_with_metrics
+from product_rag import build_flavors_hint_for_query, build_context_for_llm
 
 
 DANGEROUS_KEYWORDS = [
@@ -27,12 +29,10 @@ def clean_sql(text: str) -> str:
     text = re.sub(r"```", "", text)
     text = text.strip()
 
-    # Вытаскиваем SELECT или WITH из любого текста
     match = re.search(r"((?:WITH|SELECT)[\s\S]+)", text, flags=re.IGNORECASE)
     if match:
         text = match.group(1).strip()
 
-    # Убираем финальную ; и .
     text = text.rstrip(";").strip()
     if text.endswith("."):
         text = text[:-1]
@@ -51,7 +51,6 @@ def is_safe(sql: str) -> bool:
         if re.search(rf"\b{kw}\b", sql_upper):
             return False
 
-    # Запрещаем несколько запросов через ;
     if sql.count(";") > 0:
         return False
 
@@ -89,13 +88,50 @@ def correct_sql(enriched_question: str, prev_sql: str, error: str) -> tuple[str,
 
 
 # ============================================================
+# ОБОГАЩЕНИЕ ЗАПРОСА
+# ============================================================
+
+def enrich_full(question: str) -> tuple[str, dict, dict]:
+    """
+    Обогащает вопрос всеми источниками контекста:
+    1. entities (бренды, сети, вкусы, форматы)
+    2. metrics (бизнес-формулы)
+    3. product_mapping (реальные комбинации товаров)
+    """
+    enriched_q1, entities = enrich_question(question)
+    enriched_q2, metrics_info = enrich_with_metrics(enriched_q1)
+
+    # Обогащаем контекстом из product_mapping
+    brands = entities.get("brands") or []
+    try:
+        flavors_hint = build_flavors_hint_for_query(
+            question,
+            brand=brands[0] if brands else None,
+        )
+        if flavors_hint:
+            enriched_q2 = enriched_q2 + flavors_hint
+
+        ctx = build_context_for_llm(
+            brands=brands,
+            flavors=entities.get("flavors"),
+            max_items=10,
+        )
+        if ctx:
+            enriched_q2 = enriched_q2 + ctx
+    except Exception as e:
+        print(f"[AGENT] product RAG failed: {e}")
+
+    return enriched_q2, entities, metrics_info
+
+
+# ============================================================
 # ГЛАВНАЯ ФУНКЦИЯ
 # ============================================================
 
 def ask(question: str) -> dict:
     """
     Основная функция агента.
-    1. Обогащает вопрос сущностями и метриками.
+    1. Обогащает вопрос сущностями, метриками и product RAG.
     2. Генерирует SQL через LLM.
     3. Валидирует безопасность.
     4. Выполняет в ClickHouse.
@@ -103,11 +139,10 @@ def ask(question: str) -> dict:
     """
     attempts = []
 
-    # === Обогащаем вопрос сущностями и метриками ===
+    # === Обогащаем вопрос ===
     print(f"[AGENT] Original question: {question}")
 
-    enriched_q1, entities = enrich_question(question)
-    enriched_question, metrics_info = enrich_with_metrics(enriched_q1)
+    enriched_question, entities, metrics_info = enrich_full(question)
 
     print(f"[AGENT] Entities: {entities}")
     print(f"[AGENT] Metrics: {[m['key'] for m in metrics_info.get('metrics', [])]}")

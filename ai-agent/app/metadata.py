@@ -38,7 +38,7 @@ COLUMNS = {
     "retail_chain": {
         "type": "LowCardinality(String)",
         "desc": "Розничная сеть",
-        "example": "'Дикси', 'Пятерочка', 'Магнит', 'Ашан', 'Перекресток', 'Лента', 'Окей', 'Верный', 'Красное и Белое', 'Чижик', 'Слата', 'Виктория', 'Батон', 'Бристоль', 'Самокат', 'Хлеб Соль', 'X5 United', 'Пятъница', 'Перекресток-Джем'",
+        "example": "'Дикси', 'Пятерочка', 'Магнит', 'Ашан', 'Перекресток', 'Лента', 'Окей', 'Верный', 'Красное и Белое', 'Чижик', 'Слата', 'Виктория', 'Батон', 'Бристоль', 'Самокат', 'Хлеб Соль', 'X5 United', 'Пятъница', 'Перекресток-Джем', 'Глобус'",
     },
     "region_name": {
         "type": "Nullable(String)",
@@ -53,7 +53,7 @@ COLUMNS = {
     },
     "address": {
         "type": "Nullable(String)",
-        "desc": "Полный адрес магазина",
+        "desc": "Полный адрес магазина (используется для COUNT DISTINCT address = количество торговых точек)",
     },
     "store_code": {
         "type": "Nullable(String)",
@@ -67,6 +67,7 @@ COLUMNS = {
     "store_format": {
         "type": "Nullable(String)",
         "desc": "Формат магазина (гипермаркет, супермаркет и т.п.)",
+        "example": "'ГМ', 'СМ', 'У', 'Дискаунтер'",
     },
 
     # === ТОВАР ===
@@ -82,7 +83,7 @@ COLUMNS = {
     "brand": {
         "type": "Nullable(String)",
         "desc": "Бренд товара",
-        "example": "\"O'кей\", 'Lay's', 'Pringles', 'Русская картошка', 'Cheetos', 'Lorenz'",
+        "example": "\"O'кей\", 'Lay\\'s', 'Pringles', 'Русская картошка', 'Cheetos', 'Lorenz'",
     },
     "vendor": {
         "type": "Nullable(String)",
@@ -116,12 +117,12 @@ COLUMNS = {
     "flavor": {
         "type": "Nullable(String)",
         "desc": "Вкус товара",
-        "example": "'Соль', 'Сметана и лук', 'Бекон'",
+        "example": "'Соль', 'Сметана и лук', 'Бекон', 'Морепродукты', 'Томат', 'Краб'",
     },
     "weight_grams": {
-        "type": "Nullable(String)",
-        "desc": "Вес упаковки в граммах. ВНИМАНИЕ: тип String! Для арифметики используй toFloat64OrNull(weight_grams).",
-        "example": "'160'",
+        "type": "Nullable(Float64) или String",
+        "desc": "Вес упаковки в граммах. ТИП МОЖЕТ БЫТЬ РАЗНЫЙ (Float64 или String в зависимости от источника). Для универсальной конвертации ВСЕГДА используй toFloat64OrZero(toString(weight_grams)).",
+        "example": "160",
     },
     "chip_type": {
         "type": "Nullable(String)",
@@ -229,8 +230,10 @@ BUSINESS_GLOSSARY = """
 - "остаток" → SUM(stock_qty) или SUM(stock_rub)
 - "промо" / "по акции" → SUM(promo_sales_rub)
 - "магазины" → COUNT(DISTINCT store_code)
+- "торговые точки" / "ТТ" → COUNT(DISTINCT address)
 - "товары" / "SKU" → COUNT(DISTINCT product_id)
 - "чипсы" (как категория) → WHERE product_category_2 IN ('Чипсы', 'Снэки', '213. Чипсы, снеки')
+- "цена за грамм" → (SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0)) / NULLIF(toFloat64OrZero(toString(weight_grams)), 0)
 """
 
 
@@ -245,24 +248,37 @@ COMMON_RULES = """
 7. Даты хранятся как String в формате YYYY-MM-DD. Сравнения через '<', '>', '=' работают. Для функций дат: toDate(date).
 8. Для агрегации по месяцу используй year, month (String, на русском) или toStartOfMonth(toDate(date)).
 9. Для агрегации по неделе используй week_num или toStartOfWeek(toDate(date)).
-10. Веса товаров в колонке weight_grams — String. Для арифметики: toFloat64OrNull(weight_grams).
+10. Веса товаров в колонке weight_grams — тип может быть Float64 или String. Для универсальной конвертации ВСЕГДА используй toFloat64OrZero(toString(weight_grams)). Пример фильтра: toInt32(toFloat64OrZero(toString(weight_grams))) = 120.
 11. Для топов всегда используй ORDER BY <метрика> DESC LIMIT N.
 12. Игнорируй строки где product_category_4 содержит только числа: NOT match(product_category_4, '^[0-9.]+$').
 13. Округляй суммы: round(SUM(sales_amount_rub), 2).
 14. Если пользователь не уточнил период — не фильтруй по дате.
 15. Не используй CTE (WITH) без крайней нужды — просто вложенный SELECT.
-16. Если пользователь просит "анализ", "детальный", "разбивку", "детально" — 
-    группируй по нескольким разрезам сразу: например по дате + бренду или бренду + вкусу.
-17. Если просят "по месяцам" — используй toStartOfMonth(toDate(date)).
+16. Если пользователь просит "анализ", "детальный", "разбивку", "детально" — группируй по нескольким разрезам сразу: например по дате + бренду или бренду + вкусу.
+17. Если просят "по месяцам" — используй toStartOfMonth(toDate(date)) или year+month.
 18. Если просят "по дням" — GROUP BY date.
 19. Если просят "динамику" — тоже time series (по месяцу или дню).
 20. НЕ используй LIMIT 1 если только явно не просят "одну строку" или "общий итог".
 21. Для агрегации ВСЕГДА добавляй сумму по количеству и выручке одновременно, чтобы дать полную картину.
-22. Для "цены за 1 грамм": (SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0)) / NULLIF(toFloat64OrNull(weight_grams), 0)
-23. Для "нормализованной цены к X грамм" (пересчёт как бы вес был X): цена_за_упаковку / вес * X. То есть: (SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0)) / NULLIF(toFloat64OrNull(weight_grams), 0) * X.
+22. Для "цены за 1 грамм": (SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0)) / NULLIF(toFloat64OrZero(toString(weight_grams)), 0)
+23. Для "нормализованной цены к X грамм" (пересчёт как бы вес был X): цена_за_упаковку / вес * X. То есть: (SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0)) / NULLIF(toFloat64OrZero(toString(weight_grams)), 0) * X.
 24. Если в промпте есть блок "РАСПОЗНАННЫЕ БИЗНЕС-МЕТРИКИ" — используй формулы ИМЕННО оттуда, не изобретай свои.
-25. Если пользователь дал список граммовок (типа "70, 120, 140 грамм") — фильтруй toInt32OrNull(weight_grams) IN (...) и группируй ПО weight_grams, чтобы не смешивать разные фасовки.
+25. Если пользователь дал список граммовок (типа "70, 120, 140 грамм") — фильтруй toInt32(toFloat64OrZero(toString(weight_grams))) IN (...) и группируй ПО weight_grams, чтобы не смешивать разные фасовки.
 26. При работе с ценой за грамм ОБЯЗАТЕЛЬНО группируй по weight_grams — иначе средневзвешенное будет ложным.
+"""
+
+
+IMPORTANT_HINTS = """
+Специфичные подсказки для этой таблицы:
+- Кол-во торговых точек (ТТ, магазинов) = COUNT(DISTINCT address).
+- Store_format принимает значения: 'ГМ' (гипермаркет), 'СМ' (супермаркет), 'У' (у дома) и т.п.
+- weight_grams — тип может быть Float64 или String. ВСЕГДА пиши: toInt32(toFloat64OrZero(toString(weight_grams))) = 120.
+- year — Int16, сравнивай напрямую year = 2026.
+- Для чистки региона используй trim(region_name) — там бывают ведущие пробелы.
+- Всегда фильтруй is not null для колонок со звёздочкой (region_name, brand, flavor).
+- Приоритетные вкусы часто спрашивают вместе: 'Сметана и лук', 'Морепродукты', 'Томат', 'Лосось'.
+- ГМ = гипермаркет. СМ = супермаркет.
+- Категории чипсов: 'Картофельные чипсы', 'Кукурузные чипсы', 'Овощные чипсы', 'Пшеничные чипсы'.
 """
 
 
@@ -280,5 +296,8 @@ def format_columns_for_prompt() -> str:
         if "note" in meta:
             line += f" ⚠️ {meta['note']}"
         lines.append(line)
+
+    lines.append("")
+    lines.append(IMPORTANT_HINTS)
 
     return "\n".join(lines)

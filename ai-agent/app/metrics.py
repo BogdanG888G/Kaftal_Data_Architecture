@@ -70,7 +70,7 @@ BUSINESS_METRICS = {
         "formula": """round(
     SUM(sales_amount_rub)
     / NULLIF(SUM(sales_quantity), 0)
-    / NULLIF(toFloat64OrNull(weight_grams), 0),
+    / NULLIF(toFloat64OrZero(toString(weight_grams)), 0),
     3
 )""",
         "description": "Средняя цена за 1 грамм товара. Формула: (выручка / штуки) / вес в граммах.",
@@ -83,7 +83,7 @@ BUSINESS_METRICS = {
         "formula": """round(
     SUM(sales_cost_price)
     / NULLIF(SUM(sales_quantity), 0)
-    / NULLIF(toFloat64OrNull(weight_grams), 0),
+    / NULLIF(toFloat64OrZero(toString(weight_grams)), 0),
     3
 )""",
         "description": "Средняя себестоимость 1 грамма",
@@ -102,7 +102,7 @@ BUSINESS_METRICS = {
         ],
         "formula_template": """round(
     (SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0))
-    / NULLIF(toFloat64OrNull(weight_grams), 0)
+    / NULLIF(toFloat64OrZero(toString(weight_grams)), 0)
     * {target_grams},
     2
 )""",
@@ -120,7 +120,7 @@ BUSINESS_METRICS = {
         "synonyms": ["нормализованная себестоимость", "себест нормализованная"],
         "formula_template": """round(
     (SUM(sales_cost_price) / NULLIF(SUM(sales_quantity), 0))
-    / NULLIF(toFloat64OrNull(weight_grams), 0)
+    / NULLIF(toFloat64OrZero(toString(weight_grams)), 0)
     * {target_grams},
     2
 )""",
@@ -188,7 +188,6 @@ BUSINESS_METRICS = {
 def extract_target_grams(question: str) -> int | None:
     """
     Ищет в вопросе целевую граммовку для нормализации.
-    Примеры: "нормализуй к 120г", "приведи к 100 грамм"
     """
     patterns = [
         r"нормализ\w*\s+(?:к|на)\s*(\d{2,4})\s*(?:г|гр|грамм)",
@@ -208,13 +207,11 @@ def extract_target_grams(question: str) -> int | None:
 
 def extract_grams_list(question: str) -> list[int]:
     """
-    Ищет упомянутые граммовки: "70, 120, 140 грамм" или "70г 120г 140г"
+    Ищет упомянутые граммовки.
     """
-    # Паттерн: число + возможные пробелы + г/гр/грамм
-    # Или список чисел через запятую
     result = set()
 
-    # Список чисел с одним "грамм" в конце: "70, 120, 140 грамм"
+    # Список чисел с одним "грамм" в конце
     m = re.search(r"([\d,\s]+)\s*(?:г\b|гр\b|грамм)", question.lower())
     if m:
         nums_str = m.group(1)
@@ -223,7 +220,7 @@ def extract_grams_list(question: str) -> list[int]:
             if 10 <= n_int <= 2000:
                 result.add(n_int)
 
-    # Одиночные числа с "г": "70г 120г"
+    # Одиночные числа с "г"
     for m in re.finditer(r"\b(\d{2,4})\s*(?:г\b|гр\b|грамм)", question.lower()):
         n_int = int(m.group(1))
         if 10 <= n_int <= 2000:
@@ -235,7 +232,6 @@ def extract_grams_list(question: str) -> list[int]:
 def extract_metrics(question: str) -> list[dict]:
     """
     Из вопроса пользователя извлекает упомянутые метрики.
-    Возвращает список dict с формулами и описаниями.
     """
     q_lower = question.lower()
     found_keys = []
@@ -247,7 +243,6 @@ def extract_metrics(question: str) -> list[dict]:
                     found_keys.append(key)
                 break
 
-    # Строим результат
     target_grams = extract_target_grams(question) or TARGET_GRAMS_DEFAULT
     result = []
 
@@ -289,12 +284,14 @@ def build_metrics_hint(metrics: list[dict], grams_list: list[int] = None) -> str
         grams_str = ", ".join(str(g) for g in grams_list)
         parts.append(
             f"\n⚙️ УПОМЯНУТЫЕ ГРАММОВКИ: {grams_str}\n"
-            f"   Используй фильтр: toInt32OrNull(weight_grams) IN ({grams_str})"
+            f"   Используй фильтр: toInt32(toFloat64OrZero(toString(weight_grams))) IN ({grams_str})"
         )
 
     parts.append(
         "\n⚠️ ВАЖНО: используй формулы ИМЕННО так, как указано выше. "
-        "Не изобретай свои варианты."
+        "Не изобретай свои варианты. "
+        "Для weight_grams ВСЕГДА используй toFloat64OrZero(toString(weight_grams)) — "
+        "тип колонки может быть Float64 или String."
     )
 
     return "\n".join(parts)
@@ -303,7 +300,6 @@ def build_metrics_hint(metrics: list[dict], grams_list: list[int] = None) -> str
 def enrich_with_metrics(question: str) -> tuple[str, dict]:
     """
     Обогащает вопрос информацией о найденных бизнес-метриках.
-    Возвращает (enriched_question, metrics_info).
     """
     metrics = extract_metrics(question)
     grams_list = extract_grams_list(question)
