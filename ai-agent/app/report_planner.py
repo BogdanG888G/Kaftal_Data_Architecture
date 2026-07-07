@@ -60,6 +60,7 @@ PLANNER_SYSTEM_PROMPT = """Ты составляешь план отчёта п�
 - "lollipop" — ОБЯЗАТЕЛЬНО для секций "Топ SKU" / "Топ товаров" (group_by содержит product_name)
 - "grouped_bar" — только для сравнения цены vs себестоимости (group_by=["brand"])
 - "pie" — доли (топ-10 брендов, топ-10 вкусов)
+- "small_multiples" — сетка мини-графиков: топ вкусов внутри каждого топ-бренда (group_by=["brand","flavor"])
 
 ЗАПРЕЩЕНО:
 - НЕ используй chart_type "heatmap" (убран)
@@ -95,7 +96,7 @@ PLAN_EXAMPLE = """Пример:
 Запрос: "Магнит ГМ 120г картофельные чипсы 2026 по территориям, приоритет Сметана и лук, Морепродукты"
 
 Ответ (валидный JSON):
-{"filters":{"retail_chain":"Магнит","store_format":"ГМ","chip_type":"Картофельные чипсы","year":2026,"weight_grams":120,"priority_flavors":["Сметана и лук","Морепродукты"]},"sections":[{"title":"KPI","question":"Общие показатели","group_by":[],"chart_type":"kpi"},{"title":"Динамика по месяцам","question":"Выручка, количество и средняя цена по месяцам","group_by":["year","month"],"chart_type":"line"},{"title":"Топ регионов","question":"Топ-25 регионов","group_by":["region_name"],"chart_type":"bar"},{"title":"Топ городов","question":"Топ-20 городов","group_by":["city_name"],"chart_type":"bar"},{"title":"Топ брендов","question":"Все бренды","group_by":["brand"],"chart_type":"bar"},{"title":"Топ вкусов","question":"Все вкусы","group_by":["flavor"],"chart_type":"bar"},{"title":"Топ-20 SKU","question":"Топ-20 товаров","group_by":["brand","product_name"],"chart_type":"lollipop"},{"title":"Цена vs себестоимость","question":"Цена продажи и себестоимость по брендам","group_by":["brand"],"chart_type":"grouped_bar"},{"title":"Доли брендов","question":"Топ-10 брендов","group_by":["brand"],"chart_type":"pie"},{"title":"Доли вкусов","question":"Топ-10 вкусов","group_by":["flavor"],"chart_type":"pie"},{"title":"Сметана и лук по регионам","question":"Топ регионов для этого вкуса","group_by":["region_name"],"chart_type":"bar","extra_filter":{"flavor":"Сметана и лук"}},{"title":"Морепродукты по регионам","question":"Топ регионов для этого вкуса","group_by":["region_name"],"chart_type":"bar","extra_filter":{"flavor":"Морепродукты"}}]}
+{"filters":{"retail_chain":"Магнит","store_format":"ГМ","chip_type":"Картофельные чипсы","year":2026,"weight_grams":120,"priority_flavors":["Сметана и лук","Морепродукты"]},"sections":[{"title":"KPI","question":"Общие показатели","group_by":[],"chart_type":"kpi"},{"title":"Динамика по месяцам","question":"Выручка, количество и средняя цена по месяцам","group_by":["year","month"],"chart_type":"line"},{"title":"Топ регионов","question":"Топ-25 регионов","group_by":["region_name"],"chart_type":"bar"},{"title":"Топ городов","question":"Топ-20 городов","group_by":["city_name"],"chart_type":"bar"},{"title":"Топ брендов","question":"Все бренды","group_by":["brand"],"chart_type":"bar"},{"title":"Топ вкусов","question":"Все вкусы","group_by":["flavor"],"chart_type":"bar"},{"title":"Топ-20 SKU","question":"Топ-20 товаров","group_by":["brand","product_name"],"chart_type":"lollipop"},{"title":"Цена vs себестоимость","question":"Цена продажи и себестоимость по брендам","group_by":["brand"],"chart_type":"grouped_bar"},{"title":"Топ вкусов по каждому бренду","question":"Топ вкусов у топ-9 брендов","group_by":["brand","flavor"],"chart_type":"small_multiples"},{"title":"Доли брендов","question":"Топ-10 брендов","group_by":["brand"],"chart_type":"pie"},{"title":"Доли вкусов","question":"Топ-10 вкусов","group_by":["flavor"],"chart_type":"pie"},{"title":"Сметана и лук по регионам","question":"Топ регионов для этого вкуса","group_by":["region_name"],"chart_type":"bar","extra_filter":{"flavor":"Сметана и лук"}},{"title":"Морепродукты по регионам","question":"Топ регионов для этого вкуса","group_by":["region_name"],"chart_type":"bar","extra_filter":{"flavor":"Морепродукты"}}]}
 """
 
 
@@ -278,6 +279,9 @@ def plan_fallback(user_request: str) -> dict:
         {"title": "Цена vs себестоимость", "question": "Цена и себестоимость по брендам",
          "group_by": ["brand"], "chart_type": "grouped_bar"},
 
+        {"title": "Топ вкусов по каждому бренду", "question": "Топ вкусов внутри топ-брендов",
+        "group_by": ["brand", "flavor"], "chart_type": "small_multiples"},
+
         {"title": "Доли брендов", "question": "Топ-10 брендов",
          "group_by": ["brand"], "chart_type": "pie"},
 
@@ -319,7 +323,7 @@ def plan_fallback(user_request: str) -> dict:
 # ВАЛИДАЦИЯ
 # ============================================================
 
-VALID_CHART_TYPES = {"kpi", "bar", "line", "pie", "lollipop", "grouped_bar"}
+VALID_CHART_TYPES = {"kpi", "bar", "line", "pie", "lollipop", "grouped_bar", "small_multiples"}
 
 FORBIDDEN_GROUP_BY = {"chip_type", "week_num"}
 
@@ -360,6 +364,11 @@ def _validate_sections(sections: list):
         if "product_name" in group_by and chart_type == "bar":
             print(f"[PLANNER] Section '{section['title']}': product_name → lollipop")
             section["chart_type"] = "lollipop"
+        
+        # Если это small_multiples — но нет двух категорий → сменим на bar
+        if chart_type == "small_multiples" and len(group_by) < 2:
+            print(f"[PLANNER] Section '{section['title']}': small_multiples без 2 колонок → bar")
+            section["chart_type"] = "bar"
 
         cleaned.append(section)
 

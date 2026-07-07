@@ -209,6 +209,10 @@ def build_sql_for_section(section: dict, filters: dict) -> str:
     if chart_type == "kpi" or not group_by:
         return sql_kpi({**filters, **extra_filter})
 
+    # === Small multiples — топ вкусов по каждому бренду ===
+    if chart_type == "small_multiples":
+        return sql_small_multiples_brand_flavor(filters, extra_filter)
+
     # === Grouped bar — цена vs себестоимость по бренду ===
     if chart_type == "grouped_bar":
         return sql_price_vs_cost(filters, group_by[0], extra_filter)
@@ -282,3 +286,44 @@ FROM {TABLE}
 GROUP BY {group_str}
 ORDER BY revenue DESC
 LIMIT {limit}"""
+
+def sql_small_multiples_brand_flavor(filters: dict, extra_filter: dict = None) -> str:
+    """
+    SQL для small multiples: топ-9 брендов, у каждого топ-7 вкусов.
+    """
+    where = build_where(filters, extra_filter)
+
+    # Общий фильтр непустых brand/flavor
+    extra_conds = [
+        "brand IS NOT NULL",
+        "toString(brand) != ''",
+        "toString(brand) != 'Не указано'",
+        "flavor IS NOT NULL",
+        "toString(flavor) != ''",
+        "toString(flavor) != 'Не указано'",
+    ]
+
+    if where:
+        where_full = where + "\n  AND " + "\n  AND ".join(extra_conds)
+    else:
+        where_full = "WHERE " + "\n  AND ".join(extra_conds)
+
+    return f"""WITH top_brands AS (
+    SELECT brand
+    FROM {TABLE}
+    {where_full}
+    GROUP BY brand
+    ORDER BY SUM(sales_amount_rub) DESC
+    LIMIT 9
+)
+SELECT
+    brand,
+    flavor,
+    round(SUM(sales_amount_rub), 2) AS revenue,
+    SUM(sales_quantity) AS qty
+FROM {TABLE}
+{where_full}
+  AND brand IN (SELECT brand FROM top_brands)
+GROUP BY brand, flavor
+ORDER BY brand, revenue DESC
+LIMIT 500"""

@@ -10,6 +10,8 @@ from charts import build_chart, fig_to_png_bytes
 from utils import to_excel
 from excel_report import build_excel_bytes
 from kpi_cards import render_kpi_cards
+from pptx_report import build_pptx_bytes
+from auth import login_form, logout_button
 
 
 st.set_page_config(
@@ -17,6 +19,14 @@ st.set_page_config(
     page_icon="📊",
     layout="wide",
 )
+
+
+# ============================================================
+# АВТОРИЗАЦИЯ
+# ============================================================
+
+if not login_form():
+    st.stop()
 
 
 # ============================================================
@@ -109,6 +119,9 @@ with st.sidebar:
         st.session_state["history"] = []
         st.session_state["reports"] = []
         st.rerun()
+
+    # Кнопка выхода
+    logout_button()
 
 
 # ============================================================
@@ -301,18 +314,20 @@ def render_report(report, r_idx):
     st.caption(info_line)
 
     filters = report.get("filters") or {}
-    excel_col1, _ = st.columns([2, 5])
-    with excel_col1:
+
+    # === КНОПКИ ГЕНЕРАЦИИ ===
+    gen_col1, gen_col2, _ = st.columns([2, 2, 3])
+
+    with gen_col1:
         excel_key = f"gen_excel_{r_idx}"
         if st.button(
-            "📥 Сформировать полный Excel-отчёт",
+            "📥 Сформировать Excel",
             key=excel_key,
             type="primary",
             use_container_width=True,
         ):
             with st.spinner("Формирую Excel..."):
                 try:
-                    # Передаём иерархию из пожеланий пользователя
                     hierarchy = report.get("excel_hierarchy") or []
                     excel_bytes = build_excel_bytes(filters, excel_hierarchy=hierarchy)
                     st.session_state[f"excel_bytes_{r_idx}"] = excel_bytes
@@ -333,12 +348,40 @@ def render_report(report, r_idx):
                 use_container_width=True,
             )
 
+    with gen_col2:
+        pptx_key = f"gen_pptx_{r_idx}"
+        if st.button(
+            "🎨 Сформировать презентацию",
+            key=pptx_key,
+            type="primary",
+            use_container_width=True,
+        ):
+            with st.spinner("Формирую PPTX-презентацию..."):
+                try:
+                    pptx_bytes = build_pptx_bytes(report)
+                    st.session_state[f"pptx_bytes_{r_idx}"] = pptx_bytes
+                    st.success(f"✅ Готово! Размер: {len(pptx_bytes) / 1024:.1f} KB")
+                except Exception as e:
+                    st.error(f"Ошибка: {e}")
+
+        if f"pptx_bytes_{r_idx}" in st.session_state:
+            st.download_button(
+                label="⬇️ Скачать PPTX",
+                data=st.session_state[f"pptx_bytes_{r_idx}"],
+                file_name=f"report_{r_idx}.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                key=f"dl_pptx_{r_idx}",
+                use_container_width=True,
+            )
+
+    # Применённые фильтры
     active = {k: v for k, v in filters.items() if v is not None and v != []}
     if active:
         with st.expander("🎯 Применённые фильтры", expanded=True):
             filters_df = pd.DataFrame([active])
             render_kpi_cards(filters_df, columns_per_row=4)
 
+    # Секции
     for s_idx, section in enumerate(report["sections"]):
         with st.container(border=True):
             st.subheader(f"{s_idx + 1}. {section['title']}")
@@ -405,7 +448,6 @@ if is_report_mode:
             if r_idx < len(st.session_state["reports"]) - 1:
                 st.divider()
 
-        # Автоскролл к последнему отчёту
         st.markdown(
             """
             <script>

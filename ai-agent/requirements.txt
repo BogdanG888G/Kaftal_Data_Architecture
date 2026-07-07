@@ -7,3 +7,5 @@ httpx==0.28.1
 python-dotenv==1.0.1
 pydantic==2.10.4
 rapidfuzz==3.10.1
+python-pptx==1.0.2
+kaleido==0.2.1

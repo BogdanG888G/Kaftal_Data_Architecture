@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 
 
 # ============================================================
-# ЦВЕТОВАЯ ТЕМА (та же что в твоих matplotlib отчётах)
+# ЦВЕТОВАЯ ТЕМА
 # ============================================================
 
 BG_DARK = "#0d1117"
@@ -27,14 +27,12 @@ ACCENT = {
     "pink": "#ff6eb4",
 }
 
-# Градиентные палитры по типу графика
 GRADIENT_REVENUE = ["#4d9de0", "#00d2ff", "#6bcb77", "#ffd93d"]
 GRADIENT_QTY = ["#c084fc", "#ff6eb4", "#ff6b6b", "#ff9f43"]
 GRADIENT_GRAMS = ["#c084fc", "#4d9de0", "#00d2ff", "#6bcb77"]
 GRADIENT_FLAVORS = ["#1a73e8", "#ffd93d", "#6bcb77", "#00d2ff"]
 GRADIENT_CITIES = ["#ff6b6b", "#1a73e8", "#ffd93d"]
 
-# Фирменные цвета сетей
 CHAIN_COLORS = {
     "Магнит": "#e30613",
     "Пятерочка": "#ff8c00",
@@ -56,7 +54,7 @@ CHAIN_COLORS = {
 
 
 # ============================================================
-# ФОРМАТИРОВАНИЕ ЧИСЕЛ
+# ФОРМАТИРОВАНИЕ
 # ============================================================
 
 def fmt_rub_full(x):
@@ -91,13 +89,11 @@ def cut_label(s, n=45):
 # ============================================================
 
 def _gradient_colors(base_palette, n):
-    """Создаёт градиент из n цветов на основе палитры."""
     if n <= 0:
         return []
     if n == 1:
         return [base_palette[0]]
 
-    # Линейная интерполяция между цветами палитры
     def hex_to_rgb(h):
         h = h.lstrip("#")
         return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))
@@ -124,7 +120,6 @@ def _gradient_colors(base_palette, n):
 
 
 def _apply_dark_layout(fig, title=""):
-    """Применяет тёмную тему к фигуре."""
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor=BG_DARK,
@@ -167,7 +162,6 @@ def _find_time_col(df):
 
 
 def _find_metric_col(df, prefer=None):
-    """Находит первую числовую колонку. prefer — приоритетная."""
     numeric = df.select_dtypes(include=["number"]).columns.tolist()
     if not numeric:
         return None
@@ -180,14 +174,10 @@ def _find_metric_col(df, prefer=None):
 
 
 # ============================================================
-# ТИПЫ ГРАФИКОВ
+# ГРАФИКИ
 # ============================================================
 
 def chart_bar_horizontal(df, title="", category_col=None, value_col=None, palette=None):
-    """
-    Горизонтальный бар-чарт с подписями стоимости и процентов.
-    Стиль как в matplotlib-отчётах.
-    """
     if df.empty:
         return None
 
@@ -202,21 +192,14 @@ def chart_bar_horizontal(df, title="", category_col=None, value_col=None, palett
         if value_col is None:
             return None
 
-    # Ограничим количество строк
     plot_df = df.head(25).copy()
-
-    # Сортируем по возрастанию (чтобы самый большой был вверху при horizontal)
     plot_df = plot_df.sort_values(value_col, ascending=True)
-
-    # Обрезаем длинные названия
     plot_df[category_col] = plot_df[category_col].apply(lambda x: cut_label(x, 45))
 
-    # Цвета
     if palette is None:
         palette = GRADIENT_REVENUE
     colors = _gradient_colors(palette, len(plot_df))
 
-    # Подписи на барах
     total = plot_df[value_col].sum()
     is_money = "revenue" in value_col.lower() or "rub" in value_col.lower() or "amount" in value_col.lower()
 
@@ -225,14 +208,11 @@ def chart_bar_horizontal(df, title="", category_col=None, value_col=None, palett
         val = row[value_col]
         pct = val / total * 100 if total > 0 else 0
         val_str = fmt_rub_full(val) if is_money else fmt_int(val)
-
-        # Дополнительные метрики
         extras = []
         if "qty" in plot_df.columns and value_col != "qty":
             extras.append(f"{fmt_int(row['qty'])} шт")
         if "tt_count" in plot_df.columns:
             extras.append(f"{int(row['tt_count'])} ТТ")
-
         extras_str = "  •  " + "  •  ".join(extras) if extras else ""
         labels.append(f"  {val_str}  •  {pct:.1f}%{extras_str}")
 
@@ -246,7 +226,6 @@ def chart_bar_horizontal(df, title="", category_col=None, value_col=None, palett
             text=labels,
             textposition="outside",
             textfont=dict(color=TEXT_MAIN, size=11),
-            hovertemplate="<b>%{y}</b><br>Значение: %{x:,.0f}<extra></extra>",
         )
     )
 
@@ -263,11 +242,6 @@ def chart_bar_horizontal(df, title="", category_col=None, value_col=None, palett
 
 
 def chart_line(df, title="", x_col=None, y_col=None, metric_filter=None):
-    """
-    Линейный график.
-    Если metric_filter указан ('revenue' / 'qty' / 'avg_price') — рисует одну линию.
-    Иначе — все метрики на одном графике.
-    """
     if df.empty:
         return None
 
@@ -276,7 +250,6 @@ def chart_line(df, title="", x_col=None, y_col=None, metric_filter=None):
 
     plot_df = df.copy()
 
-    # Склеиваем year + month
     if "year" in plot_df.columns and "month" in plot_df.columns:
         month_order = {
             "Январь": 1, "Февраль": 2, "Март": 3, "Апрель": 4,
@@ -288,7 +261,6 @@ def chart_line(df, title="", x_col=None, y_col=None, metric_filter=None):
         plot_df["_period"] = plot_df["month"].astype(str) + " " + plot_df["year"].astype(str)
         x_col = "_period"
 
-    # Ищем колонки
     revenue_col = None
     qty_col = None
     price_col = None
@@ -302,29 +274,15 @@ def chart_line(df, title="", x_col=None, y_col=None, metric_filter=None):
         if not price_col and ("avg_price" in lc or "average_price" in lc):
             price_col = col
 
-    # Определяем что рисовать
     if metric_filter == "revenue" and revenue_col:
-        return _single_line_chart(
-            plot_df, x_col, revenue_col, "Выручка",
-            ACCENT["red"], "money", title,
-        )
+        return _single_line_chart(plot_df, x_col, revenue_col, "Выручка", ACCENT["red"], "money", title)
     if metric_filter == "qty" and qty_col:
-        return _single_line_chart(
-            plot_df, x_col, qty_col, "Количество",
-            ACCENT["teal"], "int", title,
-        )
+        return _single_line_chart(plot_df, x_col, qty_col, "Количество", ACCENT["teal"], "int", title)
     if metric_filter == "avg_price" and price_col:
-        return _single_line_chart(
-            plot_df, x_col, price_col, "Средняя цена",
-            ACCENT["yellow"], "money_short", title,
-        )
+        return _single_line_chart(plot_df, x_col, price_col, "Средняя цена", ACCENT["yellow"], "money_short", title)
 
-    # Иначе все на одном — но лучше отдельно
     if revenue_col:
-        return _single_line_chart(
-            plot_df, x_col, revenue_col, "Выручка",
-            ACCENT["red"], "money", title,
-        )
+        return _single_line_chart(plot_df, x_col, revenue_col, "Выручка", ACCENT["red"], "money", title)
 
     y_col = _find_metric_col(plot_df, prefer=["revenue", "sales"])
     if y_col is None:
@@ -333,8 +291,6 @@ def chart_line(df, title="", x_col=None, y_col=None, metric_filter=None):
 
 
 def _single_line_chart(plot_df, x_col, y_col, name, color, fmt_type, title):
-    """Один линейный график с одной метрикой."""
-
     def fmt(val):
         if fmt_type == "money":
             return fmt_rub_full(val)
@@ -357,37 +313,28 @@ def _single_line_chart(plot_df, x_col, y_col, name, color, fmt_type, title):
             mode="lines+markers+text",
             name=name,
             line=dict(color=color, width=3),
-            marker=dict(
-                size=14,
-                color=color,
-                line=dict(color=BG_DARK, width=2),
-            ),
+            marker=dict(size=14, color=color, line=dict(color=BG_DARK, width=2)),
             fill="tozeroy",
             fillcolor=f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.18)",
             text=text_labels,
             textposition="top center",
             textfont=dict(color=color, size=11, family="Arial Black"),
-            hovertemplate=f"<b>%{{x}}</b><br>{name}: %{{y:,.2f}}<extra></extra>",
         )
     )
 
     _apply_dark_layout(fig, title=title.upper())
-
-    # Много места по бокам чтобы влезли подписи
     fig.update_layout(
         height=450,
         showlegend=False,
         margin=dict(l=80, r=80, t=90, b=100),
     )
     fig.update_xaxes(tickangle=-30, automargin=True)
-    # Расширим Y-ось чтобы подписи над точками влезли
     max_y = values.max()
     fig.update_yaxes(range=[0, max_y * 1.25])
     return fig
 
 
 def chart_pie(df, title="", names_col=None, values_col=None):
-    """Donut-чарт с процентами и общей суммой в центре."""
     if df.empty:
         return None
 
@@ -402,15 +349,21 @@ def chart_pie(df, title="", names_col=None, values_col=None):
         if values_col is None:
             return None
 
-    # Топ-10 + "Прочие"
-    df_sorted = df.sort_values(values_col, ascending=False)
+    qty_col = None
+    for c in df.columns:
+        lc = c.lower()
+        if lc in ("qty", "quantity", "sales_quantity", "total_qty"):
+            qty_col = c
+            break
+
+    df_sorted = df.sort_values(values_col, ascending=False).copy()
     if len(df_sorted) > 10:
         top10 = df_sorted.head(10).copy()
-        other_val = df_sorted.iloc[10:][values_col].sum()
-        top10 = pd.concat(
-            [top10, pd.DataFrame({names_col: ["Прочие"], values_col: [other_val]})],
-            ignore_index=True,
-        )
+        others = df_sorted.iloc[10:]
+        other_row = {names_col: "Прочие", values_col: others[values_col].sum()}
+        if qty_col:
+            other_row[qty_col] = others[qty_col].sum()
+        top10 = pd.concat([top10, pd.DataFrame([other_row])], ignore_index=True)
         plot_df = top10
     else:
         plot_df = df_sorted
@@ -424,21 +377,35 @@ def chart_pie(df, title="", names_col=None, values_col=None):
     ]
     colors = palette[: len(plot_df)]
 
+    legend_labels = []
+    for _, row in plot_df.iterrows():
+        name = str(row[names_col])
+        val = row[values_col]
+        pct = val / total * 100 if total > 0 else 0
+        val_str = fmt_rub_full(val)
+
+        parts = [name, val_str]
+        if qty_col and qty_col in row.index and pd.notna(row[qty_col]):
+            parts.append(f"{fmt_int(row[qty_col])} шт")
+        parts.append(f"{pct:.1f}%")
+
+        legend_labels.append(" · ".join(parts))
+
     fig = go.Figure()
     fig.add_trace(
         go.Pie(
-            labels=plot_df[names_col],
+            labels=legend_labels,
             values=plot_df[values_col],
             hole=0.55,
             marker=dict(colors=colors, line=dict(color=BG_DARK, width=2)),
             textposition="inside",
             textinfo="percent",
             textfont=dict(color="white", size=13, family="Arial Black"),
-            hovertemplate="<b>%{label}</b><br>%{value:,.0f} ₽<br>%{percent}<extra></extra>",
+            hovertemplate="<b>%{label}</b><extra></extra>",
+            sort=False,
         )
     )
 
-    # Текст в центре
     fig.add_annotation(
         text=f"<b>{fmt_rub_full(total)}</b>",
         x=0.5, y=0.5,
@@ -448,7 +415,7 @@ def chart_pie(df, title="", names_col=None, values_col=None):
 
     _apply_dark_layout(fig, title=title.upper())
     fig.update_layout(
-        height=550,
+        height=600,
         showlegend=True,
         legend=dict(
             orientation="v",
@@ -456,17 +423,17 @@ def chart_pie(df, title="", names_col=None, values_col=None):
             y=0.5,
             xanchor="left",
             x=1.02,
-            font=dict(size=11),
+            font=dict(size=11, color=TEXT_MAIN),
+            bgcolor=CARD_BG,
+            bordercolor=GRID_COLOR,
+            borderwidth=1,
         ),
+        margin=dict(l=20, r=350, t=80, b=40),
     )
     return fig
 
 
 def chart_lollipop(df, title="", category_col=None, value_col=None):
-    """
-    Lollipop chart для ТОП SKU.
-    Подписи справа от точек, много места по бокам.
-    """
     if df.empty:
         return None
 
@@ -499,7 +466,6 @@ def chart_lollipop(df, title="", category_col=None, value_col=None):
 
     fig = go.Figure()
 
-    # Линии от 0 до точки
     for i, (_, row) in enumerate(plot_df.iterrows()):
         fig.add_shape(
             type="line",
@@ -508,7 +474,6 @@ def chart_lollipop(df, title="", category_col=None, value_col=None):
             line=dict(color=GRID_COLOR, width=2),
         )
 
-    # Подписи справа от точек
     labels = []
     total = plot_df[value_col].sum()
     for _, row in plot_df.iterrows():
@@ -525,51 +490,28 @@ def chart_lollipop(df, title="", category_col=None, value_col=None):
             x=plot_df[value_col],
             y=plot_df[category_col],
             mode="markers+text",
-            marker=dict(
-                size=20,
-                color=colors,
-                line=dict(color="white", width=1.5),
-                symbol="circle",
-            ),
+            marker=dict(size=20, color=colors, line=dict(color="white", width=1.5), symbol="circle"),
             text=labels,
             textposition="middle right",
             textfont=dict(color=TEXT_MAIN, size=11, family="Arial Black"),
-            hovertemplate="<b>%{y}</b><br>%{x:,.0f}<extra></extra>",
-            cliponaxis=False,  # разрешаем текст выходить за оси
+            cliponaxis=False,
         )
     )
 
     max_val = plot_df[value_col].max()
-
-    # Существенно расширяем x-ось чтобы подписи справа влезли
-    fig.update_xaxes(
-        range=[0, max_val * 2.5],
-        showgrid=True,
-        automargin=True,
-    )
-    fig.update_yaxes(
-        showgrid=False,
-        automargin=True,
-        tickfont=dict(size=11),
-    )
+    fig.update_xaxes(range=[0, max_val * 2.5], showgrid=True, automargin=True)
+    fig.update_yaxes(showgrid=False, automargin=True, tickfont=dict(size=11))
 
     _apply_dark_layout(fig, title=title.upper())
-
-    # КЛЮЧЕВОЕ: большая высота, широкие margin слева и справа
     fig.update_layout(
         height=max(750, 42 * len(plot_df) + 200),
         showlegend=False,
         margin=dict(l=40, r=100, t=100, b=60),
-        uniformtext_minsize=10,
-        uniformtext_mode='show',
     )
     return fig
 
 
 def chart_grouped_bar_prices(df, title=""):
-    """
-    Grouped bar: цена продажи vs себестоимость по брендам + подписи маржи.
-    """
     if df.empty:
         return None
 
@@ -601,7 +543,6 @@ def chart_grouped_bar_prices(df, title=""):
 
     fig = go.Figure()
 
-    # Бары себестоимости
     if cost_col:
         fig.add_trace(
             go.Bar(
@@ -616,7 +557,6 @@ def chart_grouped_bar_prices(df, title=""):
             )
         )
 
-    # Бары цены продажи + подписи маржи
     sell_labels = []
     for _, row in plot_df.iterrows():
         sell = row[sell_col]
@@ -655,9 +595,134 @@ def chart_grouped_bar_prices(df, title=""):
     )
     return fig
 
+def chart_small_multiples(df, title=""):
+    """
+    Small multiples: сетка мини-графиков.
+    Ожидает df с двумя категориями и метрикой.
+    Первая категория = группы (например, бренды).
+    Вторая категория = позиции внутри группы (например, вкусы).
+    """
+    if df.empty:
+        return None
+
+    non_num = [c for c in df.columns if c not in df.select_dtypes(include=["number"]).columns]
+    numeric = df.select_dtypes(include=["number"]).columns.tolist()
+
+    if len(non_num) < 2 or not numeric:
+        return None
+
+    group_col = non_num[0]      # например brand
+    item_col = non_num[1]       # например flavor
+    value_col = _find_metric_col(df, prefer=["revenue", "sales"])
+    if value_col is None:
+        return None
+
+    is_money = "revenue" in value_col.lower() or "rub" in value_col.lower()
+
+    # Топ-9 групп
+    top_groups = (
+        df.groupby(group_col)[value_col].sum()
+        .nlargest(9)
+        .index.tolist()
+    )
+
+    if not top_groups:
+        return None
+
+    # Расположение: 3 колонки, до 3 рядов
+    n = len(top_groups)
+    ncols = min(3, n)
+    nrows = (n + ncols - 1) // ncols
+
+    # Цвета для каждого мини-графика
+    palette = [
+        "#1a73e8", "#ff6b6b", "#ffd93d", "#6bcb77",
+        "#00d2ff", "#ff9f43", "#c084fc", "#ff6eb4", "#4d9de0",
+    ]
+
+    from plotly.subplots import make_subplots
+
+    fig = make_subplots(
+        rows=nrows,
+        cols=ncols,
+        subplot_titles=top_groups,
+        horizontal_spacing=0.15,
+        vertical_spacing=0.15,
+    )
+
+    for i, group_name in enumerate(top_groups):
+        row = i // ncols + 1
+        col = i % ncols + 1
+        color = palette[i % len(palette)]
+
+        sub = (
+            df[df[group_col] == group_name]
+            .groupby(item_col, as_index=False)[value_col]
+            .sum()
+            .nlargest(7, value_col)
+            .sort_values(value_col, ascending=True)
+        )
+
+        if sub.empty:
+            continue
+
+        # Обрезаем длинные названия вкусов
+        sub[item_col] = sub[item_col].apply(lambda x: cut_label(str(x), 25))
+
+        # Подписи с суммой
+        labels = [
+            fmt_rub_full(v) if is_money else fmt_int(v)
+            for v in sub[value_col]
+        ]
+
+        fig.add_trace(
+            go.Bar(
+                y=sub[item_col],
+                x=sub[value_col],
+                orientation="h",
+                marker=dict(color=color, line=dict(color=BG_DARK, width=0.5)),
+                text=labels,
+                textposition="outside",
+                textfont=dict(color=TEXT_MAIN, size=9),
+                showlegend=False,
+                hovertemplate=f"<b>{group_name}</b><br>%{{y}}<br>%{{x:,.0f}}<extra></extra>",
+            ),
+            row=row,
+            col=col,
+        )
+
+        # Расширяем x-ось для подписей
+        max_val = sub[value_col].max()
+        fig.update_xaxes(range=[0, max_val * 1.5], row=row, col=col)
+
+    # Стилизация subplot-заголовков
+    for annotation in fig.layout.annotations:
+        annotation.font.size = 13
+        annotation.font.family = "Arial Black"
+        annotation.font.color = TEXT_MAIN
+
+    _apply_dark_layout(fig, title=title.upper())
+    fig.update_layout(
+        height=max(500, 350 * nrows + 100),
+        showlegend=False,
+        margin=dict(l=40, r=40, t=100, b=40),
+    )
+
+    # Тёмный фон для каждого subplot
+    fig.update_xaxes(
+        gridcolor=GRID_COLOR,
+        tickcolor=TEXT_SUB,
+        tickfont=dict(color=TEXT_SUB, size=8),
+    )
+    fig.update_yaxes(
+        gridcolor=GRID_COLOR,
+        tickcolor=TEXT_MAIN,
+        tickfont=dict(color=TEXT_MAIN, size=9),
+    )
+
+    return fig
 
 def chart_heatmap(df, title=""):
-    """Heatmap для двух категорий + одна метрика."""
     if df.empty:
         return None
 
@@ -673,7 +738,6 @@ def chart_heatmap(df, title=""):
     pivot = pivot.loc[pivot.sum(1).sort_values(ascending=False).index]
     pivot = pivot[pivot.sum(0).sort_values(ascending=False).index]
 
-    # Отображаем в тыс. ₽ если очень большие числа
     divisor = 1000 if pivot.values.max() > 100_000 else 1
     unit = "тыс ₽" if divisor > 1 else "₽"
 
@@ -692,30 +756,24 @@ def chart_heatmap(df, title=""):
             text=[[f"{v:.0f}" if v > 0 else "" for v in row] for row in pivot.values / divisor],
             texttemplate="%{text}",
             textfont=dict(color="white", size=10, family="Arial Black"),
-            colorbar=dict(title=unit, tickfont=dict(color=TEXT_SUB)),
-            hovertemplate="<b>%{y}</b> × <b>%{x}</b><br>%{z:.0f} " + unit + "<extra></extra>",
         )
     )
 
     _apply_dark_layout(fig, title=title.upper())
-    fig.update_layout(
-        height=max(500, 30 * len(pivot) + 150),
-        xaxis=dict(tickangle=-30),
-    )
+    fig.update_layout(height=max(500, 30 * len(pivot) + 150), xaxis=dict(tickangle=-30))
     return fig
 
 
 # ============================================================
-# УМНЫЙ ВЫБОР ГРАФИКА
+# УМНЫЙ ВЫБОР
 # ============================================================
 
 def build_chart(df, chart_type="auto", title=""):
-    """Строит график указанного типа."""
     if df is None or df.empty:
         return None
 
     if chart_type == "kpi":
-        return None  # KPI рендерится как metrics в UI
+        return None
 
     non_num = [c for c in df.columns if c not in df.select_dtypes(include=["number"]).columns]
     numeric = df.select_dtypes(include=["number"]).columns.tolist()
@@ -723,15 +781,14 @@ def build_chart(df, chart_type="auto", title=""):
     if not numeric:
         return None
 
-    # Определим палитру по контексту заголовка
     title_lower = title.lower()
-    if "город" in title_lower or "cit" in title_lower:
+    if "город" in title_lower:
         palette = GRADIENT_CITIES
-    elif "вкус" in title_lower or "flavor" in title_lower:
+    elif "вкус" in title_lower:
         palette = GRADIENT_FLAVORS
-    elif "грамм" in title_lower or "gram" in title_lower:
+    elif "грамм" in title_lower:
         palette = GRADIENT_GRAMS
-    elif "штук" in title_lower or "qty" in title_lower or "количеств" in title_lower:
+    elif "штук" in title_lower or "количеств" in title_lower:
         palette = GRADIENT_QTY
     else:
         palette = GRADIENT_REVENUE
@@ -748,47 +805,242 @@ def build_chart(df, chart_type="auto", title=""):
 
         if chart_type == "line":
             return chart_line(df, title=title)
-
         if chart_type == "pie":
             return chart_pie(df, title=title)
-
         if chart_type == "heatmap":
             return chart_heatmap(df, title=title)
-
         if chart_type == "lollipop":
             return chart_lollipop(df, title=title)
-
         if chart_type == "grouped_bar":
             return chart_grouped_bar_prices(df, title=title)
+        if chart_type == "small_multiples":
+            return chart_small_multiples(df, title=title)
 
-        # Default — bar
         return chart_bar_horizontal(df, title=title, palette=palette)
 
     except Exception as e:
         print(f"[CHART] Failed to build {chart_type}: {e}")
-        # Fallback на bar
         try:
             return chart_bar_horizontal(df, title=title, palette=palette)
         except Exception:
             return None
 
 
-# Обратная совместимость
 def auto_chart(df):
     return build_chart(df, chart_type="auto")
 
 
 # ============================================================
-# ЭКСПОРТ В PNG
+# ЭКСПОРТ В PNG (с fallback на matplotlib)
 # ============================================================
 
 def fig_to_png_bytes(fig, width=1400, height=None):
-    """Конвертирует Plotly-фигуру в PNG bytes."""
+    """Пробует kaleido, при ошибке — matplotlib fallback."""
     if fig is None:
         return None
+
+    # Попытка 1: kaleido
     try:
         h = height or fig.layout.height or 600
-        return fig.to_image(format="png", width=width, height=h, scale=2)
+        png = fig.to_image(format="png", width=width, height=h, scale=2)
+        if png:
+            return png
     except Exception as e:
-        print(f"[CHART] PNG export failed: {e}")
+        print(f"[CHART] Kaleido failed: {type(e).__name__}: {str(e)[:150]}")
+
+    # Попытка 2: matplotlib fallback
+    try:
+        return _matplotlib_fallback(fig, width, height)
+    except Exception as e:
+        print(f"[CHART] Matplotlib fallback failed: {type(e).__name__}: {str(e)[:150]}")
         return None
+
+
+def _extract_single_color(trace, default):
+    marker = getattr(trace, "marker", None)
+    if marker is not None:
+        color = getattr(marker, "color", None)
+        if isinstance(color, str):
+            return color
+    line = getattr(trace, "line", None)
+    if line is not None:
+        color = getattr(line, "color", None)
+        if isinstance(color, str):
+            return color
+    return default
+
+
+def _extract_colors(trace, count, default):
+    marker = getattr(trace, "marker", None)
+    if marker is not None:
+        color = getattr(marker, "color", None)
+        if isinstance(color, (list, tuple)):
+            return [c if isinstance(c, str) else default for c in color]
+        if isinstance(color, str):
+            return [color] * count
+    return [default] * count
+
+
+def _matplotlib_fallback(fig, width=1400, height=None):
+    """Рендер Plotly-фигуры через matplotlib."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    height = height or 600
+
+    title_text = ""
+    if fig.layout.title and fig.layout.title.text:
+        title_text = fig.layout.title.text
+
+    # === PIE ===
+    for trace in fig.data:
+        if trace.type == "pie":
+            labels = list(trace.labels) if trace.labels else []
+            values = list(trace.values) if trace.values else []
+
+            mpl_fig, ax = plt.subplots(
+                figsize=(width / 100, height / 100),
+                facecolor=BG_DARK,
+                dpi=100,
+            )
+            ax.set_facecolor(BG_DARK)
+
+            palette = [
+                ACCENT["red"], ACCENT["orange"], ACCENT["yellow"],
+                ACCENT["green"], ACCENT["teal"], ACCENT["blue"],
+                ACCENT["purple"], ACCENT["pink"], "#9ca3af",
+                "#64748b", "#374151",
+            ]
+            pie_colors = palette[: len(values)]
+
+            wedges, _ = ax.pie(
+                values, colors=pie_colors,
+                startangle=90,
+                wedgeprops=dict(width=0.45, edgecolor=BG_DARK, linewidth=2),
+            )
+
+            total_pie = sum(values)
+            for i, wedge in enumerate(wedges):
+                pct = values[i] / total_pie * 100 if total_pie > 0 else 0
+                if pct < 3:
+                    continue
+                angle = (wedge.theta1 + wedge.theta2) / 2
+                x = 0.75 * np.cos(np.radians(angle))
+                y = 0.75 * np.sin(np.radians(angle))
+                ax.text(x, y, f"{pct:.1f}%",
+                        ha="center", va="center",
+                        color="white", fontsize=11, fontweight="bold")
+
+            ax.text(0, 0, fmt_rub_full(total_pie),
+                    ha="center", va="center",
+                    color=ACCENT["orange"], fontsize=16, fontweight="bold")
+
+            ax.legend(
+                wedges, labels,
+                loc="center left",
+                bbox_to_anchor=(1.05, 0.5),
+                fontsize=9,
+                frameon=False,
+                labelcolor=TEXT_MAIN,
+            )
+
+            ax.set_aspect("equal")
+
+            if title_text:
+                mpl_fig.suptitle(title_text, color=TEXT_MAIN, fontsize=14, fontweight="bold")
+
+            plt.tight_layout()
+
+            buf = io.BytesIO()
+            mpl_fig.savefig(buf, format="png", facecolor=BG_DARK, bbox_inches="tight", dpi=100)
+            plt.close(mpl_fig)
+            buf.seek(0)
+            return buf.getvalue()
+
+    # === НЕ-PIE ===
+    mpl_fig, ax = plt.subplots(
+        figsize=(width / 100, height / 100),
+        facecolor=BG_DARK,
+        dpi=100,
+    )
+    ax.set_facecolor(CARD_BG)
+
+    for trace in fig.data:
+        trace_type = trace.type
+        name = getattr(trace, "name", "") or ""
+
+        if trace_type == "bar":
+            orientation = getattr(trace, "orientation", "v")
+            n = len(trace.x or trace.y or [])
+            colors = _extract_colors(trace, n, ACCENT["blue"])
+
+            if orientation == "h":
+                y_vals = list(trace.y) if trace.y else []
+                x_vals = list(trace.x) if trace.x else []
+                y_labels = [cut_label(str(v), 40) for v in y_vals]
+                bars = ax.barh(y_labels, x_vals, color=colors, label=name)
+                max_x = max(x_vals) if x_vals else 1
+                for bar, val in zip(bars, x_vals):
+                    label = fmt_rub_full(val) if val > 1000 else fmt_int(val)
+                    ax.text(
+                        val + max_x * 0.01, bar.get_y() + bar.get_height() / 2,
+                        f"  {label}",
+                        va="center", ha="left",
+                        color=TEXT_MAIN, fontsize=9,
+                    )
+            else:
+                x_vals = [cut_label(str(v), 20) for v in (list(trace.x) if trace.x else [])]
+                y_vals = list(trace.y) if trace.y else []
+                ax.bar(x_vals, y_vals, color=colors, label=name)
+
+        elif trace_type == "scatter":
+            x_vals = list(trace.x) if trace.x else []
+            y_vals = list(trace.y) if trace.y else []
+            mode = getattr(trace, "mode", "lines")
+            color = _extract_single_color(trace, ACCENT["teal"])
+
+            if "lines" in mode:
+                marker = "o" if "markers" in mode else None
+                ax.plot(x_vals, y_vals, color=color, linewidth=2.5,
+                        marker=marker, markersize=8, label=name)
+                if "markers" in mode and len(y_vals) < 30:
+                    for x, y in zip(x_vals, y_vals):
+                        try:
+                            label = fmt_rub_full(y) if y > 1000 else fmt_int(y)
+                            ax.text(x, y, f"  {label}",
+                                    color=color, fontsize=8, ha="center", va="bottom")
+                        except Exception:
+                            pass
+            elif "markers" in mode:
+                ax.scatter(x_vals, y_vals, color=color, s=100, label=name)
+
+        elif trace_type == "heatmap":
+            z = np.array(trace.z) if trace.z else np.array([[0]])
+            ax.imshow(z, aspect="auto", cmap="viridis")
+            if trace.x:
+                x_list = list(trace.x)
+                ax.set_xticks(range(len(x_list)))
+                ax.set_xticklabels([cut_label(str(v), 15) for v in x_list],
+                                    rotation=30, ha="right", color=TEXT_SUB, fontsize=8)
+            if trace.y:
+                y_list = list(trace.y)
+                ax.set_yticks(range(len(y_list)))
+                ax.set_yticklabels([cut_label(str(v), 25) for v in y_list],
+                                    color=TEXT_MAIN, fontsize=9)
+
+    if title_text:
+        ax.set_title(title_text, color=TEXT_MAIN, fontsize=14, fontweight="bold", pad=15)
+
+    ax.tick_params(colors=TEXT_SUB, labelsize=9)
+    for spine in ax.spines.values():
+        spine.set_color(GRID_COLOR)
+    ax.grid(True, color=GRID_COLOR, alpha=0.3, linestyle="--", axis="x")
+
+    plt.tight_layout()
+
+    buf = io.BytesIO()
+    mpl_fig.savefig(buf, format="png", facecolor=BG_DARK, bbox_inches="tight", dpi=100)
+    plt.close(mpl_fig)
+    buf.seek(0)
+    return buf.getvalue()

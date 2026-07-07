@@ -15,7 +15,7 @@ def expand_line_sections(sections_plan: list) -> list:
     """
     Раскладывает каждую line-секцию на 3:
     - Выручка
-    - Количество проданного
+    - Количество проданного товара
     - Средняя цена
     """
     expanded = []
@@ -27,7 +27,7 @@ def expand_line_sections(sections_plan: list) -> list:
 
             for metric_key, metric_label in [
                 ("revenue", "Выручка"),
-                ("qty", "Количество проданного"),
+                ("qty", "Количество проданного товара"),
                 ("avg_price", "Средняя цена"),
             ]:
                 new_section = {
