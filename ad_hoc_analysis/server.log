@@ -1,0 +1,9 @@
+nohup: ignoring input
+[2026-07-09 11:49:35 +0000] [167142] [INFO] Starting gunicorn 26.0.0
+[2026-07-09 11:49:35 +0000] [167142] [INFO] Listening at: http://0.0.0.0:5000 (167142)
+[2026-07-09 11:49:35 +0000] [167142] [INFO] Using worker: sync
+[2026-07-09 11:49:35 +0000] [167143] [INFO] Booting worker with pid: 167143
+[2026-07-09 11:49:35 +0000] [167144] [INFO] Booting worker with pid: 167144
+[2026-07-09 11:49:35 +0000] [167146] [INFO] Booting worker with pid: 167146
+[2026-07-09 11:49:35 +0000] [167147] [INFO] Booting worker with pid: 167147
+[2026-07-09 11:49:35 +0000] [167142] [INFO] Control socket listening at /run/user/1000/gunicorn.ctl

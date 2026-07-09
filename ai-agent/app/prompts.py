@@ -12,6 +12,10 @@ SYSTEM_PROMPT_TEMPLATE = """Ты — опытный SQL-аналитик по Cl
 
 {rules}
 
+{column_values}
+
+{conversational}
+
 {examples}
 
 Отвечай ТОЛЬКО одним SQL-запросом. Никакого другого текста, никаких пояснений, никакой обёртки ```sql.
@@ -35,8 +39,28 @@ CORRECTION_PROMPT_TEMPLATE = """Ты сгенерировал SQL, но при �
 """
 
 
+def _get_column_values_hint() -> str:
+    """Безопасно получает подсказку с реальными значениями колонок."""
+    try:
+        from column_values import build_column_values_hint
+        return build_column_values_hint()
+    except Exception as e:
+        print(f"[PROMPTS] Failed to load column values: {e}")
+        return ""
+
+
+def _get_conversational_hint() -> str:
+    """Безопасно получает подсказку по разговорным словам."""
+    try:
+        from column_values import build_conversational_hint
+        return build_conversational_hint()
+    except Exception as e:
+        print(f"[PROMPTS] Failed to load conversational hints: {e}")
+        return ""
+
+
 def build_system_prompt(examples_text: str = None) -> str:
-    """Собирает системный промпт."""
+    """Собирает системный промпт со всеми подсказками."""
     if examples_text is None:
         examples_text = format_examples_for_prompt(limit=8)
 
@@ -44,6 +68,8 @@ def build_system_prompt(examples_text: str = None) -> str:
         schema=format_columns_for_prompt(),
         glossary=BUSINESS_GLOSSARY,
         rules=COMMON_RULES,
+        column_values=_get_column_values_hint(),
+        conversational=_get_conversational_hint(),
         examples=examples_text,
     )
 

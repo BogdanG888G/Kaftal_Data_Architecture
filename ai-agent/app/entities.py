@@ -260,6 +260,11 @@ STOP_WORDS = {
     "по", "за", "в", "на", "у", "с", "к", "от", "до",
     "магниту", "пятерочке", "дикси", "ленте", "ашане", "перекрестку",
     "самокату", "окею", "верному",
+    # части составных слов
+    "гипермаркет", "супермаркет", "гипер", "супер",
+    "маркет",  # чтобы не ловилось из "гипермаркет"
+    "магазин", "магазины",
+    "формат", "форматов", "формате",
 }
 
 # Контекстные маркеры — если рядом есть эти слова, категория точно определяется
@@ -360,18 +365,36 @@ def extract_entities(question: str) -> dict:
         if w.lower() not in STOP_WORDS and len(w) >= 4
     ]
 
-    # Fuzzy для брендов — с очень высоким порогом
-    # НЕ запускаем, если есть маркер сети (значит бренд не важен)
+    # Fuzzy для брендов
     if not entities["brands"] and candidate_words and not has_chain_marker:
         all_brands = load_brands()
         found = set()
+
+        # Собираем слова которые уже распознаны как форматы — из них бренды не ищем
+        format_words = set()
+        q_lower_check = question.lower()
+        for key in FORMAT_SYNONYMS.keys():
+            if key in q_lower_check:
+                format_words.add(key)
+                # Также добавляем слова-компоненты
+                for part in key.split():
+                    format_words.add(part)
+
         for word in candidate_words:
+            word_lower = word.lower()
+
+            # Пропускаем если это часть формат-слова
+            if word_lower in format_words:
+                continue
+            if any(word_lower in fw or fw in word_lower for fw in format_words):
+                continue
+
             matches = _fuzzy_match(word, all_brands, threshold=93, limit=3)
             found.update(matches)
-        # Убираем совпадения с уже найденными сетями
+
         chains_lower = {c.lower() for c in entities["chains"]}
         entities["brands"] = [b for b in found if b.lower() not in chains_lower][:5]
-
+        
     # Fuzzy для сетей
     if not entities["chains"] and candidate_words:
         all_chains = load_chains()

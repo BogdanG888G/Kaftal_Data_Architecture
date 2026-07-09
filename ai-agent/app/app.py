@@ -1,10 +1,9 @@
-"""Streamlit UI — Sales Analytics AI Agent."""
+"""Streamlit UI — Sales Analytics AI Agent (Report Mode only)."""
 import time
 
 import streamlit as st
 import pandas as pd
 
-from agent import ask
 from report import build_report
 from charts import build_chart, fig_to_png_bytes
 from utils import to_excel
@@ -33,12 +32,8 @@ if not login_form():
 # STATE INIT
 # ============================================================
 
-if "history" not in st.session_state:
-    st.session_state["history"] = []
 if "reports" not in st.session_state:
     st.session_state["reports"] = []
-if "mode" not in st.session_state:
-    st.session_state["mode"] = "💬 Chat — быстрый ответ"
 if "question_input" not in st.session_state:
     st.session_state["question_input"] = ""
 
@@ -50,7 +45,8 @@ if "question_input" not in st.session_state:
 st.title("📊 Sales Analytics AI Agent")
 st.caption(
     "AI-агент для аналитики продаж чипсов и снеков в 19 розничных сетях. "
-    "Задай вопрос на русском — я сгенерирую SQL, выполню его в ClickHouse и покажу результат."
+    "Опиши что тебе нужно на русском — я построю подробный отчёт с графиками, "
+    "Excel-выгрузкой и PPTX-презентацией."
 )
 
 
@@ -60,52 +56,22 @@ if st.session_state.pop("show_success_toast", False):
 
 
 # ============================================================
-# РЕЖИМ
-# ============================================================
-
-mode = st.radio(
-    "Режим",
-    ["💬 Chat — быстрый ответ", "📊 Report — детальный отчёт"],
-    horizontal=True,
-    label_visibility="collapsed",
-    key="mode_selector",
-    index=0 if st.session_state["mode"].startswith("💬") else 1,
-)
-st.session_state["mode"] = mode
-is_report_mode = mode.startswith("📊")
-
-
-# ============================================================
 # SIDEBAR
 # ============================================================
 
 with st.sidebar:
-    st.header("💡 Примеры")
+    st.header("💡 Примеры запросов")
 
-    if is_report_mode:
-        examples = [
-            "Магнит ГМ 120г картофельные чипсы 2026, полный анализ по территориям с приоритетными вкусами (Сметана и лук, Морепродукты, Томат)",
-            "Полный отчёт по продажам Lay's за 2025 год",
-            "Аналитика всех сетей по картофельным чипсам за 2026 год",
-            "Детальный анализ бренда Pringles по регионам и вкусам",
-            "Отчёт по сети Пятерочка: динамика, топ товаров, категории",
-            "Картофельные чипсы 70 120 140 180 220 225 250 грамм: цена, себестоимость, цена за грамм, нормализация к 120г",
-        ]
-    else:
-        examples = [
-            "Топ-10 товаров по продажам",
-            "Топ-10 брендов по выручке",
-            "Топ-5 сетей по обороту",
-            "Продажи по месяцам",
-            "Средний чек по сетям",
-            "Продажи Lay's в Москве",
-            "Топ-10 товаров в Пятерочке",
-            "Промо-продажи по сетям",
-            "Магнит ГМ 120г картофельные чипсы вкус сметана и лук",
-            "Цена за 1 грамм по брендам для картофельных чипсов",
-            "Нормализованная цена к 120 грамм по брендам",
-            "Картофельные чипсы 70 120 140 грамм по вкусам",
-        ]
+    examples = [
+        "Магнит ГМ 120г картофельные чипсы 2026, полный анализ по территориям с приоритетными вкусами (Сметана и лук, Морепродукты, Томат)",
+        "Полный отчёт по продажам Lay's за последний год",
+        "Аналитика всех сетей по картофельным чипсам за последний период",
+        "Детальный анализ бренда Pringles по регионам и вкусам",
+        "Отчёт по сети Пятерочка: динамика, топ товаров, категории",
+        "Картофельные чипсы 70 120 140 180 220 225 250 грамм: цена, себестоимость, цена за грамм, нормализация к 120г",
+        "Ашан за последний месяц",
+        "Магнит за прошлый квартал",
+    ]
 
     for ex in examples:
         if st.button(ex, use_container_width=True, key=f"ex_{hash(ex)}"):
@@ -113,10 +79,14 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-    st.caption("⚠️ Агент выполняет только SELECT-запросы.")
+    st.caption(
+        "⚠️ Агент выполняет только SELECT-запросы.\n\n"
+        "📅 Умеет понимать: 'последний период', 'прошлый квартал', "
+        "'этот год', 'год к году'.\n\n"
+        "🎯 Умеет извлекать структуру Excel: напиши 'excel-отчёт по: сеть, регион, ...'."
+    )
 
     if st.button("🗑 Очистить историю", use_container_width=True):
-        st.session_state["history"] = []
         st.session_state["reports"] = []
         st.rerun()
 
@@ -130,17 +100,13 @@ with st.sidebar:
 
 with st.form(key="query_form", clear_on_submit=False):
     question = st.text_area(
-        "Задай вопрос:",
+        "Опиши какой отчёт тебе нужен:",
         value=st.session_state.get("question_input", ""),
-        placeholder=(
-            "Например: Магнит ГМ 120г картофельные чипсы полный анализ"
-            if is_report_mode
-            else "Например: Топ-10 товаров по продажам"
-        ),
-        height=80,
+        placeholder="Например: Магнит ГМ 120г картофельные чипсы за последний период",
+        height=100,
         key="question_textarea",
     )
-    submitted = st.form_submit_button("🚀 Выполнить", type="primary")
+    submitted = st.form_submit_button("🚀 Построить отчёт", type="primary")
 
 
 # ============================================================
@@ -151,48 +117,29 @@ if submitted:
     if not question.strip():
         st.warning("Введи вопрос.")
     else:
-        run_as_report = is_report_mode
         run_question = question.strip()
         success = False
 
-        if run_as_report:
-            progress = st.progress(0.0)
-            status = st.empty()
+        progress = st.progress(0.0)
+        status = st.empty()
 
-            def cb(msg, pct):
-                try:
-                    progress.progress(min(pct, 1.0))
-                    status.markdown(f"### {msg}")
-                except Exception:
-                    pass
-
+        def cb(msg, pct):
             try:
-                report = build_report(run_question, progress_callback=cb)
-                st.session_state["reports"].insert(0, report)
-                progress.empty()
-                status.empty()
-                st.session_state["question_input"] = ""
-                success = True
-            except Exception as e:
-                progress.empty()
-                status.error(f"❌ Ошибка построения отчёта: {e}")
+                progress.progress(min(pct, 1.0))
+                status.markdown(f"### {msg}")
+            except Exception:
+                pass
 
-        else:
-            with st.spinner("🤖 Читаю запрос → генерирую SQL → выполняю в ClickHouse..."):
-                chat_start = time.time()
-                try:
-                    result = ask(run_question)
-                    result["time_sec"] = time.time() - chat_start
-                    st.session_state["history"].insert(0, result)
-                    st.session_state["question_input"] = ""
-                    success = True
-                except Exception as e:
-                    st.session_state["history"].insert(0, {
-                        "question": run_question,
-                        "error": str(e),
-                        "time_sec": time.time() - chat_start,
-                    })
-                    success = True
+        try:
+            report = build_report(run_question, progress_callback=cb)
+            st.session_state["reports"].insert(0, report)
+            progress.empty()
+            status.empty()
+            st.session_state["question_input"] = ""
+            success = True
+        except Exception as e:
+            progress.empty()
+            status.error(f"❌ Ошибка построения отчёта: {e}")
 
         if success:
             st.session_state["show_success_toast"] = True
@@ -200,100 +147,10 @@ if submitted:
 
 
 # ============================================================
-# РЕНДЕР
+# РЕНДЕР ОТЧЁТОВ
 # ============================================================
 
 st.divider()
-
-
-def render_chat_item(item, idx):
-    with st.container(border=True):
-        st.subheader(f"❓ {item['question']}")
-
-        if "error" in item:
-            st.error(item["error"])
-            if item.get("time_sec"):
-                st.caption(f"⏱ {item['time_sec']:.1f}с")
-            return
-
-        badges = [f"🤖 `{item['model']}`"]
-        if item.get("corrected"):
-            badges.append("🔧 Self-corrected")
-        if item.get("attempts"):
-            badges.append(f"🔁 Попыток: {len(item['attempts'])}")
-        if item.get("time_sec"):
-            badges.append(f"⏱ {item['time_sec']:.1f}с")
-        st.caption(" · ".join(badges))
-
-        ents = item.get("entities") or {}
-        found = []
-        if ents.get("brands"):
-            found.append(f"🏷 Бренды: {', '.join(ents['brands'][:5])}")
-        if ents.get("chains"):
-            found.append(f"🏪 Сети: {', '.join(ents['chains'])}")
-        if ents.get("flavors"):
-            found.append(f"👅 Вкусы: {', '.join(ents['flavors'][:5])}")
-        if ents.get("formats"):
-            found.append(f"📦 Форматы: {', '.join(ents['formats'])}")
-        if ents.get("chip_types"):
-            found.append(f"🥔 Типы: {', '.join(ents['chip_types'])}")
-
-        if found:
-            with st.expander("🔍 Распознанные сущности"):
-                for f in found:
-                    st.write(f)
-
-        metrics_info = item.get("metrics_info") or {}
-        if metrics_info.get("metrics") or metrics_info.get("grams_list") or metrics_info.get("target_grams"):
-            with st.expander("📐 Распознанные метрики"):
-                for m in metrics_info.get("metrics", []):
-                    st.markdown(f"**{m['name']}** (`{m['key']}`)")
-                    st.code(m["formula"], language="sql")
-                    st.caption(m["description"])
-                    st.divider()
-                if metrics_info.get("grams_list"):
-                    st.info(f"⚙️ Граммовки: {', '.join(str(g) for g in metrics_info['grams_list'])}г")
-                if metrics_info.get("target_grams"):
-                    st.info(f"🎯 Целевая граммовка: {metrics_info['target_grams']}г")
-
-        with st.expander("🧾 SQL"):
-            st.code(item["sql"], language="sql")
-
-        if item.get("attempts") and len(item["attempts"]) > 1:
-            with st.expander("🐛 История попыток"):
-                for a in item["attempts"]:
-                    st.write(f"**{a['step']}** — модель `{a['model']}`")
-                    st.code(a["sql"], language="sql")
-                    if a.get("error"):
-                        st.warning(a["error"][:300])
-                    st.divider()
-
-        df = item["data"]
-        st.write(f"📊 Строк: **{len(df)}**")
-        st.dataframe(df, use_container_width=True, hide_index=True)
-
-        col1, col2 = st.columns([1, 5])
-        with col1:
-            st.download_button(
-                label="📥 Excel",
-                data=to_excel(df),
-                file_name=f"result_{idx}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"dl_{idx}",
-            )
-
-        fig = build_chart(df, chart_type="auto")
-        if fig is not None:
-            st.plotly_chart(fig, use_container_width=True, key=f"chat_chart_{idx}")
-            png_bytes = fig_to_png_bytes(fig)
-            if png_bytes:
-                st.download_button(
-                    label="🖼 Скачать PNG",
-                    data=png_bytes,
-                    file_name=f"chart_{idx}.png",
-                    mime="image/png",
-                    key=f"png_chat_{idx}",
-                )
 
 
 def render_report(report, r_idx):
@@ -312,6 +169,11 @@ def render_report(report, r_idx):
         f"секции: {timings.get('sections', 0):.1f}с)"
     )
     st.caption(info_line)
+
+    # Разрешённый относительный период
+    period_info = report.get("period_info")
+    if period_info and period_info.get("description"):
+        st.info(f"📅 Разрешённый период: **{period_info['description']}**")
 
     filters = report.get("filters") or {}
 
@@ -439,49 +301,32 @@ def render_report(report, r_idx):
 # ОТРИСОВКА С АВТОСКРОЛЛОМ
 # ============================================================
 
-if is_report_mode:
-    if st.session_state["reports"]:
-        st.markdown('<div id="latest-report"></div>', unsafe_allow_html=True)
+if st.session_state["reports"]:
+    st.markdown('<div id="latest-report"></div>', unsafe_allow_html=True)
 
-        for r_idx, report in enumerate(st.session_state["reports"]):
-            render_report(report, r_idx)
-            if r_idx < len(st.session_state["reports"]) - 1:
-                st.divider()
+    for r_idx, report in enumerate(st.session_state["reports"]):
+        render_report(report, r_idx)
+        if r_idx < len(st.session_state["reports"]) - 1:
+            st.divider()
 
-        st.markdown(
-            """
-            <script>
-                setTimeout(function() {
-                    const el = window.parent.document.getElementById('latest-report');
-                    if (el) {
-                        el.scrollIntoView({behavior: 'smooth', block: 'start'});
-                    }
-                }, 500);
-            </script>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.info("👆 Задай вопрос выше и нажми **Выполнить**, чтобы построить отчёт.")
+    st.markdown(
+        """
+        <script>
+            setTimeout(function() {
+                const el = window.parent.document.getElementById('latest-report');
+                if (el) {
+                    el.scrollIntoView({behavior: 'smooth', block: 'start'});
+                }
+            }, 500);
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
 else:
-    if st.session_state["history"]:
-        st.markdown('<div id="latest-chat"></div>', unsafe_allow_html=True)
-
-        for idx, item in enumerate(st.session_state["history"]):
-            render_chat_item(item, idx)
-
-        st.markdown(
-            """
-            <script>
-                setTimeout(function() {
-                    const el = window.parent.document.getElementById('latest-chat');
-                    if (el) {
-                        el.scrollIntoView({behavior: 'smooth', block: 'start'});
-                    }
-                }, 500);
-            </script>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.info("👆 Задай вопрос выше и нажми **Выполнить**, чтобы получить ответ.")
+    st.info(
+        "👆 Опиши какой отчёт тебе нужен и нажми **Построить отчёт**.\n\n"
+        "Примеры:\n"
+        "- 📅 «Магнит за последний месяц»\n"
+        "- 🎯 «Ашан ГМ 120г картофельные чипсы, приоритет вкус краб»\n"
+        "- 📊 «Полный отчёт по Пятерочке за 2026 год»"
+    )
