@@ -84,8 +84,11 @@ def build_filters_hint(filters: dict, extra_filter: dict = None) -> str:
 # ============================================================
 
 def sql_kpi(filters: dict) -> str:
-    """Универсальный KPI-запрос."""
+    """KPI-запрос с расширенными метриками."""
     where = build_where(filters)
+    where_brand = where + (" AND " if where else "WHERE ") + "brand IS NOT NULL AND toString(brand) != ''"
+    where_flavor = where + (" AND " if where else "WHERE ") + "flavor IS NOT NULL AND toString(flavor) != ''"
+
     return f"""SELECT
     round(SUM(sales_amount_rub), 2) AS revenue,
     SUM(sales_quantity) AS qty,
@@ -93,10 +96,34 @@ def sql_kpi(filters: dict) -> str:
     COUNT(DISTINCT store_code) AS stores,
     COUNT(DISTINCT brand) AS brands,
     COUNT(DISTINCT flavor) AS flavors,
-    round(SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0), 2) AS avg_price
+    round(SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0), 2) AS avg_price,
+    round(SUM(sales_cost_price) / NULLIF(SUM(sales_quantity), 0), 2) AS avg_cost,
+    (SELECT brand FROM {TABLE} {where_brand} GROUP BY brand ORDER BY SUM(sales_amount_rub) DESC LIMIT 1) AS top_brand,
+    (SELECT flavor FROM {TABLE} {where_flavor} GROUP BY flavor ORDER BY SUM(sales_amount_rub) DESC LIMIT 1) AS top_flavor
 FROM {TABLE}
 {where}
 LIMIT 1"""
+
+def sql_grams_breakdown(filters: dict, extra_filter: dict = None) -> str:
+    """SQL для разбивки по граммовкам."""
+    where = build_where(filters, extra_filter)
+    weight_filter = "AND toFloat64OrZero(toString(weight_grams)) > 0"
+    if where:
+        where_full = where + "\n  " + weight_filter
+    else:
+        where_full = "WHERE " + weight_filter.lstrip("AND ").strip()
+
+    return f"""SELECT
+    toInt32(toFloat64OrZero(toString(weight_grams))) AS weight_grams,
+    round(SUM(sales_amount_rub), 2) AS revenue,
+    SUM(sales_quantity) AS qty,
+    round(SUM(sales_amount_rub) / NULLIF(SUM(sales_quantity), 0), 2) AS avg_price
+FROM {TABLE}
+{where_full}
+GROUP BY weight_grams
+HAVING revenue > 0
+ORDER BY revenue DESC
+LIMIT 30"""
 
 
 def sql_group_bar(
@@ -238,6 +265,10 @@ def build_sql_for_section(section: dict, filters: dict) -> str:
     if len(group_by) == 1:
         limit = 30 if chart_type == "pie" else 50
         return sql_group_bar(filters, group_by[0], limit=limit, extra_filter=extra_filter)
+    
+    # === Специальный шаблон для граммовок ===
+    if len(group_by) == 1 and group_by[0] == "weight_grams":
+        return sql_grams_breakdown(filters, extra_filter)
 
     # === Несколько разрезов ===
     return sql_multi_group(filters, group_by, limit=200, extra_filter=extra_filter)

@@ -1,6 +1,5 @@
 """Генерация PPTX-презентации из отчёта."""
 import io
-from datetime import datetime
 
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
@@ -38,50 +37,100 @@ SLIDE_HEIGHT = Inches(7.5)
 
 # Русские названия для метрик и фильтров
 LABEL_TRANSLATIONS = {
+    # Метрики
     "revenue": "Выручка",
     "qty": "Штук",
     "tt_count": "Торговых точек",
     "stores": "Магазинов",
     "brands": "Брендов",
+    "brands_count": "Брендов",
     "flavors": "Вкусов",
+    "flavors_count": "Вкусов",
+    "products": "Товаров",
+    "products_count": "Товаров",
     "avg_price": "Средняя цена",
+    "avg_cost": "Средняя себестоимость",
+    "avg_cost_price": "Средняя себестоимость",
+    "margin": "Маржа",
+    "margin_rub": "Маржа",
+    "margin_pct": "Маржа %",
+
+    # Top-N
+    "top_brand": "Топ-1 бренд",
+    "top_flavor": "Топ-1 вкус",
+    "top_chain": "Топ-1 сеть",
+    "top_region": "Топ-1 регион",
+    "top_city": "Топ-1 город",
+
+    # Фильтры
     "retail_chain": "Сеть",
     "store_format": "Формат магазина",
     "chip_type": "Тип чипсов",
     "year": "Год",
     "month": "Месяц",
     "weight_grams": "Граммовка",
-    "brands": "Бренды",
-    "flavors": "Вкусы",
+    "weight_grams_list": "Граммовки",
     "priority_flavors": "Приоритетные вкусы",
+    "brand": "Бренд",
+    "flavor": "Вкус",
 }
+
 
 def _clone_fig_without_title(fig):
     """Возвращает копию фигуры без title (для PPTX)."""
     import plotly.graph_objects as go
 
-    # Клонируем через to_dict — самый надёжный способ
     fig_dict = fig.to_dict()
 
-    # Явно убираем title
     if "layout" not in fig_dict:
         fig_dict["layout"] = {}
 
-    # Полностью удаляем title из layout
     fig_dict["layout"]["title"] = {"text": ""}
 
-    # Уменьшаем верхний margin раз title убран
     if "margin" not in fig_dict["layout"]:
         fig_dict["layout"]["margin"] = {}
     fig_dict["layout"]["margin"]["t"] = 20
 
-    # Пересоздаём фигуру
-    new_fig = go.Figure(fig_dict)
-    return new_fig
+    return go.Figure(fig_dict)
 
 
 def translate(name: str) -> str:
     return LABEL_TRANSLATIONS.get(name.lower(), name)
+
+
+def _should_skip_kpi(col_name: str, value) -> bool:
+    """
+    Определяет, нужно ли пропустить бесполезную KPI-карточку.
+    Например: tt_count=1, stores=1 и т.п.
+    """
+    import pandas as pd
+
+    try:
+        if value is None or pd.isna(value):
+            return True
+    except (TypeError, ValueError):
+        pass
+
+    col_lower = col_name.lower()
+
+    # Для количественных единичных значений — скрываем если == 1
+    skip_if_one = ("tt_count", "stores", "stores_count",
+                   "brands", "brands_count",
+                   "flavors", "flavors_count",
+                   "products", "products_count")
+
+    if col_lower in skip_if_one:
+        try:
+            if float(value) <= 1:
+                return True
+        except (ValueError, TypeError):
+            pass
+
+    # Пустые строковые значения
+    if isinstance(value, str) and value.strip() in ("", "Не указано", "None"):
+        return True
+
+    return False
 
 
 def fmt_value(val, col_name=""):
@@ -124,7 +173,7 @@ def fmt_value(val, col_name=""):
         except (ValueError, TypeError):
             return str(val)
 
-    if any(k in col_lower for k in ["qty", "quantity", "count", "stores", "brands", "flavors"]):
+    if any(k in col_lower for k in ["qty", "quantity", "count", "stores", "brands", "flavors", "products"]):
         try:
             n = float(val)
             if n >= 1_000_000:
@@ -216,7 +265,7 @@ def _add_kpi_card(slide, left, top, width, height, label, value, color):
     vp.alignment = PP_ALIGN.LEFT
     vrun = vp.add_run()
     vrun.text = value
-    vrun.font.size = Pt(24)
+    vrun.font.size = Pt(22)
     vrun.font.bold = True
     vrun.font.color.rgb = RGBColor(*color)
     vrun.font.name = "Arial"
@@ -225,10 +274,10 @@ def _add_kpi_card(slide, left, top, width, height, label, value, color):
 def build_pptx_bytes(report: dict) -> bytes:
     """
     Генерирует PPTX-презентацию из отчёта.
-    
+
     Args:
         report: dict от build_report()
-    
+
     Returns:
         bytes для скачивания
     """
@@ -240,49 +289,38 @@ def build_pptx_bytes(report: dict) -> bytes:
 
     # ==================================================
     # СЛАЙД 1: ТИТУЛЬНЫЙ
+    # Только заголовок отчёта + применённые фильтры
     # ==================================================
     slide = prs.slides.add_slide(blank_layout)
     _set_bg_color(slide, BG_DARK_RGB)
 
-    _add_text(
-        slide,
-        "📊 SALES ANALYTICS",
-        Inches(1), Inches(2.5),
-        Inches(11), Inches(0.8),
-        size=36, bold=True, color=ACCENT_BLUE, align=PP_ALIGN.CENTER,
-    )
-
+    # Заголовок — сам запрос пользователя, крупно по центру
     _add_text(
         slide,
         report["request"],
-        Inches(1), Inches(3.4),
-        Inches(11), Inches(2),
-        size=22, bold=True, color=TEXT_MAIN_RGB, align=PP_ALIGN.CENTER,
+        Inches(1), Inches(2.5),
+        Inches(11), Inches(2.5),
+        size=28, bold=True, color=TEXT_MAIN_RGB, align=PP_ALIGN.CENTER,
     )
 
-    _add_text(
-        slide,
-        f"Сгенерировано: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
-        Inches(1), Inches(6),
-        Inches(11), Inches(0.5),
-        size=14, color=TEXT_SUB_RGB, align=PP_ALIGN.CENTER,
-    )
-
-    # Показать применённые фильтры
+    # Применённые фильтры под заголовком
     filters = report.get("filters") or {}
     active = {k: v for k, v in filters.items() if v is not None and v != []}
     if active:
         filter_lines = []
-        for k, v in list(active.items())[:6]:
+        for k, v in list(active.items())[:8]:
             label = translate(k)
-            val_str = ", ".join(str(x) for x in v) if isinstance(v, list) else str(v)
+            if isinstance(v, list):
+                val_str = ", ".join(str(x) for x in v)
+            else:
+                val_str = str(v)
             filter_lines.append(f"• {label}: {val_str}")
         _add_text(
             slide,
             "\n".join(filter_lines),
-            Inches(3), Inches(6.5),
-            Inches(7), Inches(1),
-            size=12, color=TEXT_SUB_RGB, align=PP_ALIGN.CENTER,
+            Inches(2), Inches(5.5),
+            Inches(9), Inches(2),
+            size=14, color=TEXT_SUB_RGB, align=PP_ALIGN.CENTER,
         )
 
     # ==================================================
@@ -309,16 +347,22 @@ def build_pptx_bytes(report: dict) -> bytes:
                 size=24, bold=True, color=TEXT_MAIN_RGB,
             )
 
-            # Карточки KPI
+            # Фильтруем колонки: пропускаем бесполезные (tt_count=1, пустые строки)
             row = df.iloc[0]
-            cols = list(df.columns)[:8]  # максимум 8
+            cols = [c for c in df.columns if not _should_skip_kpi(c, row[c])][:8]
 
-            n = len(cols)
+            if not cols:
+                _add_text(
+                    slide, "Нет значимых KPI для отображения",
+                    Inches(1), Inches(3),
+                    Inches(11), Inches(1),
+                    size=16, color=TEXT_SUB_RGB, align=PP_ALIGN.CENTER,
+                )
+                continue
+
             per_row = 4
-            rows_needed = (n + per_row - 1) // per_row
-
             card_w = Inches(2.9)
-            card_h = Inches(1.5)
+            card_h = Inches(1.6)
             gap_x = Inches(0.2)
             gap_y = Inches(0.3)
             start_x = Inches(0.5)
@@ -346,7 +390,7 @@ def build_pptx_bytes(report: dict) -> bytes:
         slide = prs.slides.add_slide(blank_layout)
         _set_bg_color(slide, BG_DARK_RGB)
 
-        # Заголовок
+        # Заголовок слайда
         _add_text(
             slide, title.upper(),
             Inches(0.5), Inches(0.3),
@@ -354,7 +398,7 @@ def build_pptx_bytes(report: dict) -> bytes:
             size=22, bold=True, color=TEXT_MAIN_RGB,
         )
 
-        # График
+        # График (без заголовка внутри — чтобы не дублировать)
         try:
             fig_no_title = _clone_fig_without_title(fig)
             png_bytes = fig_to_png_bytes(fig_no_title, width=1600, height=900)
@@ -375,47 +419,8 @@ def build_pptx_bytes(report: dict) -> bytes:
             )
 
     # ==================================================
-    # ФИНАЛЬНЫЙ СЛАЙД
-    # ==================================================
-    slide = prs.slides.add_slide(blank_layout)
-    _set_bg_color(slide, BG_DARK_RGB)
-
-    n_sections = sum(1 for s in report["sections"] if not s.get("error"))
-
-    _add_text(
-        slide, "СПАСИБО!",
-        Inches(1), Inches(2.5),
-        Inches(11), Inches(1),
-        size=48, bold=True, color=ACCENT_BLUE, align=PP_ALIGN.CENTER,
-    )
-
-    _add_text(
-        slide,
-        f"Отчёт содержит {n_sections} аналитических разрезов",
-        Inches(1), Inches(4),
-        Inches(11), Inches(0.6),
-        size=18, color=TEXT_SUB_RGB, align=PP_ALIGN.CENTER,
-    )
-
-    timings = report.get("timings", {})
-    _add_text(
-        slide,
-        f"⚡ Время генерации: {timings.get('total', 0):.1f}с",
-        Inches(1), Inches(4.8),
-        Inches(11), Inches(0.5),
-        size=14, color=TEXT_SUB_RGB, align=PP_ALIGN.CENTER,
-    )
-
-    _add_text(
-        slide,
-        "🤖 Sales Analytics AI Agent",
-        Inches(1), Inches(6.5),
-        Inches(11), Inches(0.5),
-        size=12, color=ACCENT_BLUE, align=PP_ALIGN.CENTER,
-    )
-
-    # ==================================================
     # СОХРАНЯЕМ
+    # (Финальный слайд "СПАСИБО" убран по требованию)
     # ==================================================
     buffer = io.BytesIO()
     prs.save(buffer)

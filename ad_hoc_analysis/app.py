@@ -79,7 +79,7 @@ def login():
                 </form>
                 <p style="text-align:center;color:red;margin-top:15px;">Неверный логин или пароль</p>
                 <p style="text-align:center;color:#888;margin-top:20px;font-size:14px;">
-                    💡 Логин: <strong>admin</strong> · Пароль: <strong>123</strong>
+                    💡 Логин: <strong>test/admin</strong> · Пароль: <strong>123</strong>
                 </p>
             </div>
         </body>
@@ -105,7 +105,7 @@ def login():
                 </button>
             </form>
             <p style="text-align:center;color:#888;margin-top:20px;font-size:14px;">
-                💡 Логин: <strong>admin</strong> · Пароль: <strong>123</strong>
+                💡 Логин: <strong>admin/test</strong> · Пароль: <strong>123</strong>
             </p>
         </div>
     </body>

@@ -203,6 +203,11 @@ def chart_bar_horizontal(df, title="", category_col=None, value_col=None, palett
     total = plot_df[value_col].sum()
     is_money = "revenue" in value_col.lower() or "rub" in value_col.lower() or "amount" in value_col.lower()
 
+    # ТТ показываем ТОЛЬКО для географии (регионы, города, магазины, адреса)
+    show_tt = False
+    if category_col and any(k in category_col.lower() for k in ["region", "city", "store", "address"]):
+        show_tt = True
+
     labels = []
     for _, row in plot_df.iterrows():
         val = row[value_col]
@@ -211,7 +216,7 @@ def chart_bar_horizontal(df, title="", category_col=None, value_col=None, palett
         extras = []
         if "qty" in plot_df.columns and value_col != "qty":
             extras.append(f"{fmt_int(row['qty'])} шт")
-        if "tt_count" in plot_df.columns:
+        if show_tt and "tt_count" in plot_df.columns:
             extras.append(f"{int(row['tt_count'])} ТТ")
         extras_str = "  •  " + "  •  ".join(extras) if extras else ""
         labels.append(f"  {val_str}  •  {pct:.1f}%{extras_str}")
@@ -595,6 +600,7 @@ def chart_grouped_bar_prices(df, title=""):
     )
     return fig
 
+
 def chart_small_multiples(df, title=""):
     """
     Small multiples: сетка мини-графиков.
@@ -721,6 +727,7 @@ def chart_small_multiples(df, title=""):
     )
 
     return fig
+
 
 def chart_heatmap(df, title=""):
     if df.empty:
