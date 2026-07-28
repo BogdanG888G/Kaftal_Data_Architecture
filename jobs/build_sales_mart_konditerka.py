@@ -22,7 +22,7 @@ spark = (
 print(f"✓ Spark: {spark.version}")
 
 # ============================================================
-# КОНСТАНТЫ
+# КОНФИГУРАЦИЯ
 # ============================================================
 CLICKHOUSE_HOST = "clickhouse"
 CLICKHOUSE_PORT = 8123
@@ -30,15 +30,11 @@ CLICKHOUSE_USER = "admin"
 CLICKHOUSE_PASSWORD = "123"
 CLICKHOUSE_DB = "default"
 CLICKHOUSE_TABLE = "sales_mart_konditerka"
-
 BATCH_SIZE = 50_000
 NUM_PARTITIONS = 4
-
 TODAY = datetime.now().strftime("%Y-%m-%d")
 
-# ============================================================
-# ХЕЛПЕРЫ
-# ============================================================
+
 def get_ch_client():
     return clickhouse_connect.get_client(
         host=CLICKHOUSE_HOST,
@@ -51,27 +47,12 @@ def get_ch_client():
     )
 
 
-# ============================================================
-# УНИФИЦИРОВАННЫЕ КОЛОНКИ ВИТРИНЫ (порядок важен!)
-# ============================================================
-MART_COLUMNS = [
-    "year", "month", "month_num", "period",
-    "retail_chain",
-    "district_name", "region_name", "city_name", "address",
-    "store_code", "store_name", "store_format", "store_subformat",
-    "product_id", "product_name", "brand", "vendor",
-    "barcode", "weight", "unit",
-    "category_main", "category_sub", "category_detail",
-    "sales_quantity", "sales_kg", "sales_amount_rub",
-    "sales_amount_no_vat", "sales_cost_price",
-    "average_sell_price", "average_cost_price",
-    "margin_rub", "margin_pct",
-    "losses_rub", "losses_qty", "losses_pct",
-    "write_off_rub", "write_off_qty", "write_off_pct",
-    "category_level_0", "category_level_1", "category_level_2",
-    "category_level_3", "category_level_4",
-    "source_table", "source_file", "loaded_at",
-]
+def get_loaded_files(client) -> set:
+    """Получаем список уже загруженных файлов из ClickHouse"""
+    rows = client.query(
+        f"SELECT DISTINCT source_file FROM {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}"
+    ).result_rows
+    return {row[0] for row in rows if row[0]}
 
 
 # ============================================================
@@ -81,7 +62,6 @@ def select_x5(df):
     return df.select(
         F.col("year").cast("int").alias("year"),
         F.col("month").cast("string").alias("month"),
-        # month_num из month
         F.when(F.col("month") == "Январь", 1)
          .when(F.col("month") == "Февраль", 2)
          .when(F.col("month") == "Март", 3)
@@ -116,18 +96,20 @@ def select_x5(df):
         F.col("product_category_3").cast("string").alias("category_sub"),
         F.col("product_category_4").cast("string").alias("category_detail"),
         F.col("sales_quantity").cast("double").alias("sales_quantity"),
-        F.lit(None).cast("double").alias("sales_kg"),
+        F.when(
+            F.lower(F.col("product_category_4")).rlike("весов"),
+            F.col("sales_quantity").cast("double")
+        ).otherwise(F.lit(None)).cast("double").alias("sales_kg"),
         F.col("sales_amount_rub").cast("double").alias("sales_amount_rub"),
         F.lit(None).cast("double").alias("sales_amount_no_vat"),
         F.col("sales_cost_price").cast("double").alias("sales_cost_price"),
         F.col("average_sell_price").cast("double").alias("average_sell_price"),
         F.col("average_cost_price").cast("double").alias("average_cost_price"),
-        (F.col("sales_amount_rub") - F.col("sales_cost_price"))
-            .cast("double").alias("margin_rub"),
-        F.when(F.col("sales_amount_rub") > 0,
-               (F.col("sales_amount_rub") - F.col("sales_cost_price"))
-               / F.col("sales_amount_rub") * 100
-              ).cast("double").alias("margin_pct"),
+        (F.col("sales_amount_rub") - F.col("sales_cost_price")).cast("double").alias("margin_rub"),
+        F.when(
+            F.col("sales_amount_rub") > 0,
+            (F.col("sales_amount_rub") - F.col("sales_cost_price")) / F.col("sales_amount_rub") * 100
+        ).cast("double").alias("margin_pct"),
         F.lit(None).cast("double").alias("losses_rub"),
         F.lit(None).cast("double").alias("losses_qty"),
         F.lit(None).cast("double").alias("losses_pct"),
@@ -167,25 +149,24 @@ def select_magnit(df):
         F.col("barcode").cast("string").alias("barcode"),
         F.col("weight").cast("double").alias("weight"),
         F.col("unit").cast("string").alias("unit"),
-        # Унифицированные категории
         F.col("category_level_1").cast("string").alias("category_main"),
         F.col("category_level_2").cast("string").alias("category_sub"),
         F.col("category_level_3").cast("string").alias("category_detail"),
         F.col("sales_quantity").cast("double").alias("sales_quantity"),
-        # Если ЕИ = кг, кладём в sales_kg
-        F.when(F.col("unit") == "кг", F.col("sales_quantity"))
-         .otherwise(F.lit(None)).cast("double").alias("sales_kg"),
+        F.when(
+            F.lower(F.col("unit")) == "кг",
+            F.col("sales_quantity").cast("double")
+        ).otherwise(F.lit(None)).cast("double").alias("sales_kg"),
         F.col("sales_amount_rub").cast("double").alias("sales_amount_rub"),
         F.lit(None).cast("double").alias("sales_amount_no_vat"),
         F.col("sales_cost_price").cast("double").alias("sales_cost_price"),
         F.col("average_sell_price").cast("double").alias("average_sell_price"),
         F.col("average_cost_price").cast("double").alias("average_cost_price"),
-        (F.col("sales_amount_rub") - F.col("sales_cost_price"))
-            .cast("double").alias("margin_rub"),
-        F.when(F.col("sales_amount_rub") > 0,
-               (F.col("sales_amount_rub") - F.col("sales_cost_price"))
-               / F.col("sales_amount_rub") * 100
-              ).cast("double").alias("margin_pct"),
+        (F.col("sales_amount_rub") - F.col("sales_cost_price")).cast("double").alias("margin_rub"),
+        F.when(
+            F.col("sales_amount_rub") > 0,
+            (F.col("sales_amount_rub") - F.col("sales_cost_price")) / F.col("sales_amount_rub") * 100
+        ).cast("double").alias("margin_pct"),
         F.lit(None).cast("double").alias("losses_rub"),
         F.lit(None).cast("double").alias("losses_qty"),
         F.lit(None).cast("double").alias("losses_pct"),
@@ -214,7 +195,6 @@ def select_auchan(df):
         F.lit(None).cast("string").alias("region_name"),
         F.col("city_name").cast("string").alias("city_name"),
         F.col("address").cast("string").alias("address"),
-        # store_code из "(001) Мытищи"
         F.regexp_extract(F.col("store"), r"\((\d+)\)", 1).alias("store_code"),
         F.col("store").cast("string").alias("store_name"),
         F.col("format").cast("string").alias("store_format"),
@@ -233,7 +213,6 @@ def select_auchan(df):
         F.col("sales_kg").cast("double").alias("sales_kg"),
         F.col("sales_amount_rub").cast("double").alias("sales_amount_rub"),
         F.col("sales_amount_no_vat").cast("double").alias("sales_amount_no_vat"),
-        # sales_cost_price = avg_cost_price * qty
         F.when(
             F.col("average_cost_price").isNotNull() & F.col("sales_quantity").isNotNull(),
             F.col("average_cost_price") * F.col("sales_quantity")
@@ -241,9 +220,10 @@ def select_auchan(df):
         F.col("average_sell_price").cast("double").alias("average_sell_price"),
         F.col("average_cost_price").cast("double").alias("average_cost_price"),
         F.col("margin_rub").cast("double").alias("margin_rub"),
-        F.when(F.col("sales_amount_rub") > 0,
-               F.col("margin_rub") / F.col("sales_amount_rub") * 100
-              ).cast("double").alias("margin_pct"),
+        F.when(
+            F.col("sales_amount_rub") > 0,
+            F.col("margin_rub") / F.col("sales_amount_rub") * 100
+        ).cast("double").alias("margin_pct"),
         F.col("losses_rub").cast("double").alias("losses_rub"),
         F.col("losses_qty").cast("double").alias("losses_qty"),
         F.col("losses_pct").cast("double").alias("losses_pct"),
@@ -262,7 +242,69 @@ def select_auchan(df):
 
 
 # ============================================================
-# РАСПРЕДЕЛЁННЫЙ ПИСАТЕЛЬ В CLICKHOUSE
+# ОБОГАЩЕНИЕ ВЕСОМ
+# ============================================================
+def enrich_weight(df):
+    name_clean = F.regexp_replace(
+        F.lower(F.coalesce(F.col("product_name"), F.lit(""))),
+        r"\s+", ""
+    )
+
+    # Приоритет: weight из Магнита → кг из названия → г из названия
+    weight_from_field = F.when(
+        F.col("weight").isNotNull() & (F.col("weight") > 0),
+        F.col("weight") * 1000
+    )
+
+    kg_match = F.regexp_extract(name_clean, r"(\d+(?:[.,]\d+)?)кг", 1)
+    weight_from_kg = F.when(
+        kg_match != "",
+        F.regexp_replace(kg_match, ",", ".").cast("double") * 1000
+    )
+
+    g_match = F.regexp_extract(name_clean, r"(\d+(?:[.,]\d+)?)гр?", 1)
+    weight_from_g = F.when(
+        g_match != "",
+        F.regexp_replace(g_match, ",", ".").cast("double")
+    )
+
+    df = df.withColumn(
+        "weight_g_numeric",
+        F.coalesce(weight_from_field, weight_from_kg, weight_from_g)
+    )
+
+    # Убираем мусор > 20 кг
+    df = df.withColumn(
+        "weight_g_numeric",
+        F.when(
+            (F.col("weight_g_numeric") > 0) & (F.col("weight_g_numeric") <= 20000),
+            F.col("weight_g_numeric")
+        )
+    )
+
+    df = df.withColumn("weight_g", F.col("weight_g_numeric").cast("string"))
+
+    df = df.withColumn(
+        "weight_segment",
+        F.when(F.col("weight_g_numeric").isNull(), "Нет информации о весе")
+         .when(F.col("weight_g_numeric") < 50,  "0-49")
+         .when(F.col("weight_g_numeric") < 100, "50-99")
+         .when(F.col("weight_g_numeric") < 200, "100-199")
+         .when(F.col("weight_g_numeric") < 300, "200-299")
+         .when(F.col("weight_g_numeric") < 400, "300-399")
+         .when(F.col("weight_g_numeric") < 500, "400-499")
+         .when(F.col("weight_g_numeric") < 600, "500-599")
+         .when(F.col("weight_g_numeric") < 700, "600-699")
+         .when(F.col("weight_g_numeric") < 800, "700-799")
+         .when(F.col("weight_g_numeric") < 900, "800-899")
+         .otherwise("900+")
+    )
+
+    return df
+
+
+# ============================================================
+# ЗАПИСЬ В CLICKHOUSE
 # ============================================================
 def insert_partition_to_clickhouse(iterator):
     import clickhouse_connect
@@ -324,9 +366,7 @@ def insert_partition_to_clickhouse(iterator):
                 return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
             return value
         except Exception as e:
-            raise ValueError(
-                f"Cast error `{col_name}` to `{ch_type}`: {value!r}"
-            ) from e
+            raise ValueError(f"Cast error `{col_name}` to `{ch_type}`: {value!r}") from e
 
     cols = ch_columns_b.value
     types = ch_types_b.value
@@ -343,10 +383,7 @@ def insert_partition_to_clickhouse(iterator):
 
     batch = []
     for row in iterator:
-        record = tuple(
-            cast_val(col_name, row[col_name], types[col_name])
-            for col_name in cols
-        )
+        record = tuple(cast_val(col, row[col], types[col]) for col in cols)
         batch.append(record)
 
         if len(batch) >= BATCH_SIZE:
@@ -369,75 +406,95 @@ try:
         "auchan": ("iceberg.konditerka_silver.auchan_sales", select_auchan),
     }
 
-    print("\n" + "=" * 80)
-    print("ЗАГРУЗКА И УНИФИКАЦИЯ ДАННЫХ ПО СЕТЯМ")
-    print("=" * 80)
+    # ── Шаг 1: Получаем схему CH и уже загруженные файлы ─────
+    client = get_ch_client()
+    loaded_files = get_loaded_files(client)
+
+    desc_rows = client.query(
+        f"DESCRIBE TABLE {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}"
+    ).result_rows
+
+    # ✅ ВАЖНО: убираем MATERIALIZED и ALIAS колонки из INSERT
+    insertable_rows = [
+        row for row in desc_rows
+        if (row[2] or "").upper() not in ("MATERIALIZED", "ALIAS")
+    ]
+
+    ch_columns = [row[0] for row in insertable_rows]
+    ch_types = {row[0]: row[1] for row in insertable_rows}
+    client.close()
+
+    print(f"✓ Схема получена: {len(ch_columns)} колонок для INSERT")
+    print(f"✓ Уже загружено файлов: {len(loaded_files)}")
+
+    # ── Шаг 2: Читаем Silver, фильтруем новые файлы ──────────
+    print("\n" + "=" * 70)
+    print("ИНКРЕМЕНТАЛЬНАЯ ЗАГРУЗКА")
+    print("=" * 70)
 
     dfs = []
     for chain_name, (table_name, select_func) in chains.items():
         try:
             df = spark.table(table_name)
-            unified = select_func(df)
+
+            silver_files = {
+                row[0] for row in
+                df.select("file_name").distinct().collect()
+            }
+
+            new_files = silver_files - loaded_files
+
+            if not new_files:
+                print(f"  ⊘ {chain_name}: нет новых файлов")
+                continue
+
+            print(f"  ✓ {chain_name}: {len(new_files)} новых файлов")
+            for f in sorted(new_files):
+                print(f"     + {f}")
+
+            df_new = df.filter(F.col("file_name").isin(new_files))
+            unified = select_func(df_new)
             dfs.append(unified)
-            print(f"  ✓ {chain_name} → {table_name}")
+
         except Exception as e:
             print(f"  ⚠ {chain_name}: {str(e)[:200]}")
 
     if not dfs:
-        print("⚠ Нет данных для обработки")
+        print("\n✅ Витрина актуальна. Новых данных нет.")
         spark.stop()
         raise SystemExit(0)
 
-    # 1. UNION
+    # ── Шаг 3: UNION ─────────────────────────────────────────
     all_data = dfs[0]
     for df in dfs[1:]:
         all_data = all_data.unionByName(df, allowMissingColumns=True)
-    print(f"\n✓ UNION готов: {len(dfs)} сетей")
+    print(f"\n✓ UNION: {len(dfs)} сетей")
 
-    # 2. Получаем схему таблицы из ClickHouse
-    print("\n" + "=" * 80)
-    print("ПОДГОТОВКА К ЗАПИСИ В CLICKHOUSE")
-    print("=" * 80)
+    # ── Шаг 4: Обогащение весом ──────────────────────────────
+    all_data = enrich_weight(all_data)
+    print("✓ Вес обогащён")
 
-    client = get_ch_client()
-    desc_rows = client.query(
-        f"DESCRIBE TABLE {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}"
-    ).result_rows
-    ch_columns = [row[0] for row in desc_rows]
-    ch_types = {row[0]: row[1] for row in desc_rows}
-    print(f"✓ Схема целевой таблицы получена: {len(ch_columns)} колонок")
-
-    # 3. Добавляем недостающие колонки и выравниваем порядок
+    # ── Шаг 5: Выравниваем под схему CH ──────────────────────
     for col_name in ch_columns:
         if col_name not in all_data.columns:
             all_data = all_data.withColumn(col_name, F.lit(None))
 
     all_data = all_data.select(*ch_columns)
-    print("✓ DataFrame выровнен под целевую схему")
+    print("✓ Схема выровнена")
 
-    # 4. Очистка ClickHouse
-    print("\nОчищаем старые данные в ClickHouse...")
-    client.command(f"TRUNCATE TABLE IF EXISTS {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}")
-    client.close()
-    print("✓ Таблица очищена")
+    # ── Шаг 6: Запись ────────────────────────────────────────
+    print("\nЗаписываем новые данные в ClickHouse...")
 
-    # 5. Broadcast метаданных
     ch_columns_b = spark.sparkContext.broadcast(ch_columns)
     ch_types_b = spark.sparkContext.broadcast(ch_types)
 
-    # 6. Распределённая запись
-    print("\nЗаписываем данные в ClickHouse...")
     start_time = time.time()
-
-    all_data.repartition(NUM_PARTITIONS).foreachPartition(
-        insert_partition_to_clickhouse
-    )
-
+    all_data.repartition(NUM_PARTITIONS).foreachPartition(insert_partition_to_clickhouse)
     elapsed = time.time() - start_time
-    print(f"✓ Запись завершена за {elapsed:.2f}с")
 
-    # 7. Контрольная проверка
+    # ── Шаг 7: Итог ──────────────────────────────────────────
     client = get_ch_client()
+
     final_count = client.query(
         f"SELECT count() FROM {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}"
     ).result_set[0][0]
@@ -450,18 +507,35 @@ try:
         GROUP BY retail_chain
         ORDER BY rows DESC
     """).result_rows
+
+    tier_stats = client.query(f"""
+        SELECT brand_tier,
+               count() AS rows,
+               round(sum(sales_amount_rub)/1e6, 2) AS revenue_mln_rub
+        FROM {CLICKHOUSE_DB}.{CLICKHOUSE_TABLE}
+        GROUP BY brand_tier
+        ORDER BY revenue_mln_rub DESC
+    """).result_rows
+
     client.close()
 
-    print(f"\n{'=' * 80}")
-    print(f"✅ Витрина sales_mart_konditerka успешно обновлена!")
-    print(f"   Всего строк: {final_count:,}")
-    print(f"   Время:       {elapsed:.1f}с")
-    if elapsed > 0 and final_count > 0:
-        print(f"   Скорость:    {final_count / elapsed:,.0f} строк/сек")
+    print(f"\n{'=' * 70}")
+    print(f"✅ Витрина обновлена!")
+    print(f"   Всего строк:  {final_count:,}")
+    print(f"   Время записи: {elapsed:.1f}с")
+
     print(f"\n📈 По сетям:")
     for row in chain_stats:
-        print(f"   {row[0]:<10} | {row[1]:>12,} строк | {row[2]:>10,.2f} млн ₽")
-    print(f"{'=' * 80}")
+        print(f"   {row[0]:<15} | {row[1]:>10,} стр | {row[2]:>8,.2f} млн ₽")
+
+    print(f"\n🏷 По Brand Tier (считает ClickHouse):")
+    for row in tier_stats:
+        print(f"   {str(row[0]):<25} | {row[1]:>10,} стр | {row[2]:>8,.2f} млн ₽")
+
+    print("=" * 70)
+
+except SystemExit:
+    pass
 
 except Exception:
     print("\n⚠ Ошибка пайплайна:")
@@ -471,6 +545,6 @@ except Exception:
 finally:
     try:
         spark.stop()
-        print("✓ Spark Session остановлена")
+        print("✓ Spark остановлен")
     except Exception:
         pass

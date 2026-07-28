@@ -133,6 +133,52 @@ def select_x5(df):
         F.col("period").cast("string").alias("date"),
     )
 
+def select_svetofor(df):
+    return df.select(
+        F.col("year").cast("int").alias("year"),
+        F.col("month").alias("month"),
+        F.col("retail_chain").alias("retail_chain"),
+        _col("region_name").alias("region_name"),
+        F.lit("").alias("city_name"),
+        _col("address").alias("address"),
+        F.lit("").alias("store_code"),
+        F.lit("").alias("store_name"),
+        F.lit("").alias("store_format"),
+        F.lit("").alias("product_category_2"),
+        _col("category_level_1").alias("product_category_3"),
+        _col("category_level_2").alias("product_category_4"),
+        F.lit("").alias("product_category_5"),
+        _col("product_id", "string").alias("product_id"),
+        F.col("product_name").alias("product_name_search"),
+        _lit_null("string").alias("product_uni_name"),
+        F.lit("").alias("brand"),
+        F.lit("").alias("vendor"),
+        F.lit("").alias("flavor"),
+        F.lit("").alias("weight_grams"),
+        _col("product_id", "string").alias("barcode"),
+        F.lit("").alias("manufacturer"),
+        F.col("sales_quantity").cast("int").alias("sales_quantity"),
+        F.col("sales_amount_rub").cast("double").alias("sales_amount_rub"),
+        F.col("sales_cost_price").cast("double").alias("sales_cost_price"),
+        _lit_null("double").alias("sales_kg"),
+        _lit_null("double").alias("sales_tons"),
+        F.col("average_cost_price").cast("double").alias("average_cost_price"),
+        F.col("average_sell_price").cast("double").alias("average_sell_price"),
+        (F.col("sales_amount_rub") - F.col("sales_cost_price")).cast("double").alias("margin_rub"),
+        F.when(F.col("sales_amount_rub") > 0,
+               (F.col("sales_amount_rub") - F.col("sales_cost_price"))
+               / F.col("sales_amount_rub") * 100
+              ).cast("double").alias("margin_pct"),
+        _lit_null("double").alias("cost_price_rub"),
+        _lit_null("double").alias("max_sell_price"),
+        _lit_null("double").alias("max_cost_price"),
+        _lit_null("int").alias("stock_qty"),
+        _lit_null("double").alias("stock_rub"),
+        _lit_null("double").alias("promo_sales_rub"),
+        _lit_null("int").alias("week_num"),
+        F.col("file_name").alias("file_name"),
+        F.col("period").cast("string").alias("date"),
+    )
 
 def select_magnit_new(df):
     return df.select(
@@ -836,6 +882,7 @@ try:
         "magnit_new":  ("iceberg.magnit_new_silver.magnit_new_sales", select_magnit_new),
         "samokat":     ("iceberg.samokat_silver.samokat_sales",       select_samokat),
         "globus":      ("iceberg.globus_silver.sales",                select_globus),
+        "svetofor":    ("iceberg.svetofor_silver.sales",              select_svetofor),
     }
 
     # ============================================================

@@ -225,7 +225,6 @@ else:
             print(f'Записываем {rows} строк...')
             spark.sql("CREATE NAMESPACE IF NOT EXISTS iceberg.konditerka_silver")
             final_df.writeTo(TARGET_TABLE) \
-                    .partitionedBy('retail_chain', 'year', 'month') \
                     .append()
             print(f'✓ {file} → {rows} строк')
         else:

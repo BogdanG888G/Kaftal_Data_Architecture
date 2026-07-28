@@ -1,4 +1,4 @@
-# generate_map.py - запускается один раз для генерации карты
+# generate_map.py — финальная версия с регионами, Магнитом и /data/ путями
 
 import re
 import time
@@ -38,14 +38,15 @@ YANDEX_KEYS = [
     '7b730765-17f9-4eec-822b-839c92ad7cad'
 ]
 
-REQUESTS_PER_KEY = 1200
+REQUESTS_PER_KEY = 1600
 
 DATA_DIR = Path("/home/bogdangor/Kaftal_Data_Architecture/ad_hoc_analysis/data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 MAP_PATH = DATA_DIR / "x5_stores_map_final.html"
-GEO_CACHE_PATH = DATA_DIR / "dim_stores_geo.csv"
-CITIES_XLSX = DATA_DIR / "Города.xlsx"
+GEO_CACHE_PATH = DATA_DIR / "dim_stores_geo.xlsx"
+CITIES_GEO_CACHE_PATH = DATA_DIR / "cities_geo.xlsx"
+CITIES_POP_XLSX = DATA_DIR / "Города.xlsx"   # файл с населением
 
 print(f"DATA_DIR: {DATA_DIR}")
 
@@ -110,53 +111,8 @@ client = clickhouse_connect.get_client(
 print(f"Подключились к ClickHouse: {CH_HOST}:{CH_PORT} ✅")
 
 # ============================================================
-# ЗАГРУЗКА ДАННЫХ НАСЕЛЕНИЯ
-# ============================================================
-print("\nЗагружаем данные о населении из Excel...")
-cities_pop_df = pd.read_excel(CITIES_XLSX)
-
-# Нормализуем колонки (берём первые три: Город, Регион, Федеральный округ, Население)
-# Подстраиваемся под реальные названия колонок
-col_names = cities_pop_df.columns.tolist()
-print(f"Колонки в Excel: {col_names}")
-
-# Переименуем колонки в удобные имена
-# Ожидаем: Город, Регион, Федеральный округ, Население, Статус города
-rename_map = {}
-for c in col_names:
-    cl = str(c).lower().strip()
-    if 'город' in cl and 'федерал' not in cl:
-        rename_map[c] = 'city'
-    elif 'регион' in cl:
-        rename_map[c] = 'region'
-    elif 'федерал' in cl:
-        rename_map[c] = 'federal_district'
-    elif 'насел' in cl:
-        rename_map[c] = 'population'
-    elif 'статус' in cl:
-        rename_map[c] = 'status'
-
-cities_pop_df = cities_pop_df.rename(columns=rename_map)
-print(f"После переименования: {cities_pop_df.columns.tolist()}")
-
-# Оставляем нужные колонки
-needed_cols = [c for c in ['city', 'region', 'federal_district', 'population'] if c in cities_pop_df.columns]
-cities_pop_df = cities_pop_df[needed_cols].copy()
-
-# Чистим
-cities_pop_df['city'] = cities_pop_df['city'].astype(str).str.strip()
-cities_pop_df['population'] = pd.to_numeric(cities_pop_df['population'], errors='coerce')
-cities_pop_df = cities_pop_df.dropna(subset=['population']).copy()
-cities_pop_df['population'] = cities_pop_df['population'].astype(int)
-cities_pop_df['city_lower'] = cities_pop_df['city'].str.lower().str.strip()
-
-print(f"Городов в базе населения: {len(cities_pop_df)}")
-print(cities_pop_df.head(5))
-
-# ============================================================
 # ЗАГРУЗКА ДАННЫХ ИЗ CLICKHOUSE
 # ============================================================
-
 SQL_FACT_PEREKRESTOK = """
 SELECT
     toStartOfMonth(toDate(parseDateTimeBestEffortOrNull(date))) AS period_month,
@@ -214,6 +170,34 @@ GROUP BY
 ORDER BY period_month
 """
 
+# --- НОВЫЙ ЗАПРОС ДЛЯ МАГНИТА ---
+SQL_FACT_MAGNIT = """
+SELECT
+    toStartOfMonth(toDate(parseDateTimeBestEffortOrNull(date))) AS period_month,
+    retail_chain,
+    region_name,
+    city_name,
+    address,
+    store_code,
+    store_name,
+    store_format,
+    brand,
+    sum(ifNull(sales_quantity, 0))    AS sales_quantity,
+    sum(ifNull(sales_amount_rub, 0))  AS sales_amount_rub,
+    sum(ifNull(sales_cost_price, 0))  AS cost_amount_rub
+FROM sales_mart
+WHERE
+    positionCaseInsensitiveUTF8(retail_chain, 'магнит') > 0
+    AND parseDateTimeBestEffortOrNull(date) IS NOT NULL
+    AND chip_type = 'Картофельные чипсы'
+    AND address IS NOT NULL
+    AND year = 2026
+GROUP BY
+    period_month, retail_chain, region_name, city_name,
+    address, store_code, store_name, store_format, brand
+ORDER BY period_month
+"""
+
 SQL_STORES_PEREKRESTOK = """
 SELECT DISTINCT
     retail_chain, region_name, city_name, address,
@@ -239,6 +223,18 @@ WHERE
     AND address IS NOT NULL
 """
 
+# --- НОВЫЙ ЗАПРОС ДЛЯ МАГНИТА (stores) ---
+SQL_STORES_MAGNIT = """
+SELECT DISTINCT
+    retail_chain, region_name, city_name, address,
+    store_code, store_name, store_format
+FROM sales_mart
+WHERE
+    positionCaseInsensitiveUTF8(retail_chain, 'магнит') > 0
+    AND year = 2026
+    AND address IS NOT NULL
+"""
+
 print("Загружаем fact Перекрёсток...")
 fact_p = client.query_df(SQL_FACT_PEREKRESTOK)
 print(f"  → {len(fact_p):,} строк")
@@ -246,6 +242,10 @@ print(f"  → {len(fact_p):,} строк")
 print("Загружаем fact Пятёрочка...")
 fact_5 = client.query_df(SQL_FACT_PYATEROCHKA)
 print(f"  → {len(fact_5):,} строк")
+
+print("Загружаем fact Магнит...")
+fact_m = client.query_df(SQL_FACT_MAGNIT)
+print(f"  → {len(fact_m):,} строк")
 
 print("Загружаем stores Перекрёсток...")
 stores_p = client.query_df(SQL_STORES_PEREKRESTOK)
@@ -255,14 +255,19 @@ print("Загружаем stores Пятёрочка...")
 stores_5 = client.query_df(SQL_STORES_PYATEROCHKA)
 print(f"  → {len(stores_5):,} строк")
 
-fact = pd.concat([fact_p, fact_5], ignore_index=True)
-stores = pd.concat([stores_p, stores_5], ignore_index=True)
+print("Загружаем stores Магнит...")
+stores_m = client.query_df(SQL_STORES_MAGNIT)
+print(f"  → {len(stores_m):,} строк")
+
+# Объединяем все факты и магазины
+fact = pd.concat([fact_p, fact_5, fact_m], ignore_index=True)
+stores = pd.concat([stores_p, stores_5, stores_m], ignore_index=True)
 
 print(f"\n📦 Итого fact: {len(fact):,} строк")
 print(f"📦 Итого stores: {len(stores):,} строк")
 
 # ============================================================
-# ХЕЛПЕРЫ
+# ХЕЛПЕРЫ (нормализация, геокодирование)
 # ============================================================
 def norm(x) -> str:
     if pd.isna(x):
@@ -292,20 +297,22 @@ def normalize_chain_name(x: str) -> str:
         return "Перекресток"
     if "x5 united" in x_n:
         return "X5 United"
+    if "магнит" in x_n:
+        return "Магнит"
     return norm(x) or "Другое"
 
 def make_full_address(row) -> str:
-    region = norm(row.get("region_name", ""))
-    city = norm(row.get("city_name", ""))
     address = clean_address(row.get("address", ""))
-    parts = []
-    if region:
-        parts.append(region)
-    if city and city.lower() not in address.lower():
-        parts.append(city)
-    if address:
-        parts.append(address)
-    return ", ".join(parts)
+    return address
+
+def normalize_city_for_join(s):
+    s = str(s).lower().strip()
+    s = re.sub(r'^г\.?\s*', '', s)
+    s = re.sub(r'^город\s+', '', s)
+    s = re.sub(r'^(сп\.|д\.|с\.|пос\.|рп\.|пгт\.?)\s*', '', s)
+    if ',' in s:
+        s = s.split(',')[0].strip()
+    return s.strip()
 
 def geocode_yandex(query: str, api_key: str):
     url = "https://geocode-maps.yandex.ru/1.x/"
@@ -332,7 +339,41 @@ def geocode_yandex(query: str, api_key: str):
     return float(lat_s), float(lon_s), meta.get("precision"), meta.get("text")
 
 # ============================================================
-# НОРМАЛИЗАЦИЯ
+# ЗАГРУЗКА ДАННЫХ НАСЕЛЕНИЯ (после определения normalize_city_for_join)
+# ============================================================
+print("\nЗагружаем данные о населении из Excel...")
+if CITIES_POP_XLSX.exists():
+    cities_pop_df = pd.read_excel(CITIES_POP_XLSX)
+    # Приводим колонки к нижнему регистру
+    cities_pop_df.columns = cities_pop_df.columns.str.strip().str.lower()
+    # Ищем нужные колонки
+    col_map = {}
+    for c in cities_pop_df.columns:
+        if 'город' in c and 'федерал' not in c:
+            col_map[c] = 'city'
+        elif 'регион' in c:
+            col_map[c] = 'region'
+        elif 'федерал' in c:
+            col_map[c] = 'federal_district'
+        elif 'насел' in c:
+            col_map[c] = 'population'
+    cities_pop_df = cities_pop_df.rename(columns=col_map)
+    # Оставляем нужные колонки
+    keep_cols = [c for c in ['city', 'region', 'federal_district', 'population'] if c in cities_pop_df.columns]
+    cities_pop_df = cities_pop_df[keep_cols].copy()
+    cities_pop_df['city'] = cities_pop_df['city'].astype(str).str.strip()
+    cities_pop_df['population'] = pd.to_numeric(cities_pop_df['population'], errors='coerce')
+    cities_pop_df = cities_pop_df.dropna(subset=['population']).copy()
+    cities_pop_df['population'] = cities_pop_df['population'].astype(int)
+    # Нормализуем названия городов для join
+    cities_pop_df['city_key'] = cities_pop_df['city'].apply(normalize_city_for_join)
+    print(f"Городов с населением: {len(cities_pop_df)}")
+else:
+    cities_pop_df = pd.DataFrame(columns=['city_key', 'city', 'region', 'federal_district', 'population'])
+    print("⚠️ Файл Города.xlsx не найден, данные о населении недоступны.")
+
+# ============================================================
+# НОРМАЛИЗАЦИЯ ДАННЫХ
 # ============================================================
 fact["period_month"] = pd.to_datetime(fact["period_month"], errors="coerce")
 fact["period_str"] = fact["period_month"].dt.strftime("%Y-%m")
@@ -364,7 +405,7 @@ print(f"\nfact:   {len(fact):,} строк | {fact['store_key'].nunique():,} у�
 print(f"stores: {len(stores):,} строк | {stores['store_key'].nunique():,} уникальных магазинов")
 
 # ============================================================
-# СПРАВОЧНИК МАГАЗИНОВ + ГЕОКОДИНГ
+# ГЕОКОДИНГ МАГАЗИНОВ
 # ============================================================
 store_ref = (
     stores
@@ -407,18 +448,19 @@ if only_fact_keys:
 
 print(f"Магазинов в store_ref: {len(store_ref):,}")
 
-# ============================================================
-# ГЕОКОДИНГ (с кэшем + ротация ключей)
-# ============================================================
+# --- Загрузка кэша магазинов ---
 if GEO_CACHE_PATH.exists():
-    geo_cache = pd.read_csv(GEO_CACHE_PATH, encoding="utf-8-sig")
+    geo_cache = pd.read_excel(GEO_CACHE_PATH)
+    geo_cache.columns = geo_cache.columns.str.strip().str.lower()
+    required = ["full_address", "lat", "lon", "geo_precision", "geo_found_address"]
+    for col in required:
+        if col not in geo_cache.columns:
+            geo_cache[col] = None
     geo_cache = geo_cache.drop_duplicates("full_address", keep="last").copy()
-    print(f"Кэш загружен: {len(geo_cache):,} записей")
+    print(f"Кэш магазинов загружен: {len(geo_cache):,} записей")
 else:
-    geo_cache = pd.DataFrame(columns=[
-        "full_address", "lat", "lon", "geo_precision", "geo_found_address"
-    ])
-    print("Кэш пустой — геокодим всё")
+    geo_cache = pd.DataFrame(columns=required)
+    print("Кэш магазинов не найден, создаём новый")
 
 address_ref = store_ref[["full_address"]].drop_duplicates().copy()
 address_ref = address_ref.merge(
@@ -440,12 +482,18 @@ if len(need_geo) > 0:
     save_every = 100
 
     for i, (idx, row) in enumerate(
-        tqdm(need_geo.iterrows(), total=len(need_geo), desc="Geocoding")
+        tqdm(need_geo.iterrows(), total=len(need_geo), desc="Geocoding stores")
     ):
         if not key_rotator.has_capacity:
             print(f"\n⚠️ Все ключи исчерпаны! Остановка. Обработано: {ok + fail}")
             skipped = len(need_geo) - (ok + fail)
             break
+
+        if not row["full_address"] or not row["full_address"].strip():
+            for col in ["lat", "lon", "geo_precision", "geo_found_address"]:
+                address_ref.at[idx, col] = None
+            fail += 1
+            continue
 
         try:
             lat, lon, prec, found = geocode_yandex(
@@ -497,7 +545,7 @@ if len(need_geo) > 0:
                 geo_cache,
                 address_ref[["full_address", "lat", "lon", "geo_precision", "geo_found_address"]]
             ]).drop_duplicates("full_address", keep="last")
-            _tmp.to_csv(GEO_CACHE_PATH, index=False, encoding="utf-8-sig")
+            _tmp.to_excel(GEO_CACHE_PATH, index=False)
 
         time.sleep(0.15)
 
@@ -507,8 +555,8 @@ if len(need_geo) > 0:
         geo_cache,
         address_ref[["full_address", "lat", "lon", "geo_precision", "geo_found_address"]]
     ]).drop_duplicates("full_address", keep="last")
-    updated.to_csv(GEO_CACHE_PATH, index=False, encoding="utf-8-sig")
-    print(f"Кэш обновлён: {GEO_CACHE_PATH} ({len(updated):,} записей)")
+    updated.to_excel(GEO_CACHE_PATH, index=False)
+    print(f"Кэш магазинов обновлён: {GEO_CACHE_PATH} ({len(updated):,} записей)")
 
 store_ref = store_ref.merge(
     address_ref[["full_address", "lat", "lon", "geo_precision", "geo_found_address"]],
@@ -516,7 +564,7 @@ store_ref = store_ref.merge(
 )
 
 # ============================================================
-# АГРЕГАЦИЯ — БАЗОВАЯ (по магазинам)
+# АГРЕГАЦИЯ ПО МАГАЗИНАМ
 # ============================================================
 store_sales = (
     fact
@@ -547,7 +595,6 @@ store_sales["avg_cost"] = np.where(
     np.nan
 )
 
-# топ-бренды
 store_brand_rev = (
     fact
     .groupby(["store_key", "brand"], as_index=False)
@@ -604,7 +651,7 @@ store_sales["store_name"] = store_sales["store_name"].fillna("")
 mask = store_sales["store_name"].str.strip() == ""
 store_sales.loc[mask, "store_name"] = store_sales.loc[mask, "address"].fillna("Магазин")
 
-geo = store_sales.dropna(subset=["lat", "lon"]).copy()
+geo = store_sales[store_sales["lat"].notna() & store_sales["lon"].notna()].copy()
 
 total_stores_all = store_sales["store_key"].nunique()
 total_stores_geo = geo["store_key"].nunique()
@@ -619,7 +666,122 @@ print(f"Выручка: {total_rev_all:,.0f} ₽")
 print(f"Продажи: {total_qty_all:,.0f} шт")
 
 # ============================================================
-# АГРЕГАЦИЯ ПО ГОРОДАМ — для слоя "на душу населения"
+# ГЕОКОДИНГ ГОРОДОВ
+# ============================================================
+print("\nПодготавливаем геокодирование городов...")
+
+city_list = fact[["city_name", "region_name"]].drop_duplicates("city_name").copy()
+city_list = city_list[city_list["city_name"].notna() & city_list["city_name"].str.strip().ne("")]
+city_list["city_key"] = city_list["city_name"].apply(normalize_city_for_join)
+
+print(f"Уникальных городов в данных: {len(city_list)}")
+
+required_city_cols = ["city_key", "lat", "lon", "geo_precision", "geo_found_address"]
+
+if CITIES_GEO_CACHE_PATH.exists():
+    city_geo_cache = pd.read_excel(CITIES_GEO_CACHE_PATH)
+    city_geo_cache.columns = city_geo_cache.columns.str.strip().str.lower()
+    for col in required_city_cols:
+        if col not in city_geo_cache.columns:
+            city_geo_cache[col] = None
+    city_geo_cache = city_geo_cache.drop_duplicates("city_key", keep="last").copy()
+    print(f"Кэш городов загружен: {len(city_geo_cache):,} записей")
+else:
+    city_geo_cache = pd.DataFrame(columns=required_city_cols)
+    print("Кэш городов не найден, создаём новый")
+
+cities_merged = city_list.merge(
+    city_geo_cache[["city_key", "lat", "lon", "geo_precision", "geo_found_address"]],
+    on="city_key",
+    how="left"
+)
+
+need_geo_cities = cities_merged[
+    cities_merged["city_name"].notna() &
+    (cities_merged["lat"].isna() | cities_merged["lon"].isna())
+].copy()
+
+print(f"Всего городов: {len(cities_merged):,}")
+print(f"Уже в кэше:   {len(cities_merged) - len(need_geo_cities):,}")
+print(f"Нужно геокодить: {len(need_geo_cities):,}")
+
+if len(need_geo_cities) > 0:
+    ok_city, fail_city, skipped_city = 0, 0, 0
+    save_every_city = 50
+
+    for i, (idx, row) in enumerate(
+        tqdm(need_geo_cities.iterrows(), total=len(need_geo_cities), desc="Geocoding cities")
+    ):
+        if not key_rotator.has_capacity:
+            print(f"\n⚠️ Все ключи исчерпаны! Остановка геокодирования городов. Обработано: {ok_city + fail_city}")
+            skipped_city = len(need_geo_cities) - (ok_city + fail_city)
+            break
+
+        city = row["city_name"]
+        region = row.get("region_name", "")
+        if not city or not city.strip():
+            for col in ["lat", "lon", "geo_precision", "geo_found_address"]:
+                cities_merged.at[idx, col] = None
+            fail_city += 1
+            continue
+
+        query = f"{city}, {region}, Россия"
+        try:
+            lat, lon, prec, found = geocode_yandex(query, key_rotator.current_key)
+            key_rotator.use()
+
+            cities_merged.at[idx, "lat"] = lat
+            cities_merged.at[idx, "lon"] = lon
+            cities_merged.at[idx, "geo_precision"] = prec
+            cities_merged.at[idx, "geo_found_address"] = found
+            ok_city += int(lat is not None)
+            fail_city += int(lat is None)
+
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 403:
+                print(f"\n🔑 Ключ ...{key_rotator.current_key[-8:]} вернул 403, переключаем...")
+                key_rotator.exhausted_keys.add(key_rotator.current_key)
+                key_rotator._rotate()
+                if key_rotator.has_capacity:
+                    try:
+                        lat, lon, prec, found = geocode_yandex(query, key_rotator.current_key)
+                        key_rotator.use()
+                        cities_merged.at[idx, "lat"] = lat
+                        cities_merged.at[idx, "lon"] = lon
+                        cities_merged.at[idx, "geo_precision"] = prec
+                        cities_merged.at[idx, "geo_found_address"] = found
+                        ok_city += int(lat is not None)
+                        fail_city += int(lat is None)
+                    except Exception as e2:
+                        print(f"Ошибка повтора: {e2}")
+                        for col in ["lat", "lon", "geo_precision", "geo_found_address"]:
+                            cities_merged.at[idx, col] = None
+                        fail_city += 1
+                else:
+                    for col in ["lat", "lon", "geo_precision", "geo_found_address"]:
+                        cities_merged.at[idx, col] = None
+                    fail_city += 1
+        except Exception as e:
+            print(f"Ошибка для города {city}: {e}")
+            for col in ["lat", "lon", "geo_precision", "geo_found_address"]:
+                cities_merged.at[idx, col] = None
+            fail_city += 1
+
+        if (i + 1) % save_every_city == 0:
+            _tmp_city = cities_merged[["city_key", "lat", "lon", "geo_precision", "geo_found_address"]].drop_duplicates("city_key", keep="last")
+            _tmp_city.to_excel(CITIES_GEO_CACHE_PATH, index=False)
+            print(f"💾 Кэш городов сохранён (шаг {i+1})")
+
+        time.sleep(0.15)
+
+    print(f"\n✅ Городов: успешно {ok_city}, ошибок {fail_city}, пропущено {skipped_city}")
+
+    city_geo_final = cities_merged[["city_key", "lat", "lon", "geo_precision", "geo_found_address"]].drop_duplicates("city_key", keep="last")
+    city_geo_final.to_excel(CITIES_GEO_CACHE_PATH, index=False)
+    print(f"Кэш городов сохранён: {CITIES_GEO_CACHE_PATH} ({len(city_geo_final):,} записей)")
+
+# ============================================================
+# АГРЕГАЦИЯ ПО ГОРОДАМ + ПРИСОЕДИНЕНИЕ НАСЕЛЕНИЯ
 # ============================================================
 print("\nАгрегируем продажи по городам...")
 
@@ -630,140 +792,117 @@ city_sales = (
         city_qty=("sales_quantity", "sum"),
         city_rev=("sales_amount_rub", "sum"),
         city_stores=("store_key", "nunique"),
+        region_name=("region_name", "first")
     )
 )
-city_sales["city_name_lower"] = city_sales["city_name"].str.lower().str.strip()
+city_sales["city_key"] = city_sales["city_name"].apply(normalize_city_for_join)
 
-# Функция нормализации названий городов для джойна
-def normalize_city_for_join(s):
-    s = str(s).lower().strip()
-    # Убираем "г.", "г ", "город " и т.д.
-    s = re.sub(r'^г\.?\s*', '', s)
-    s = re.sub(r'^город\s+', '', s)
-    # Убираем "сп.", "д.", "с.", "пос.", "рп." и т.д.
-    s = re.sub(r'^(сп\.|д\.|с\.|пос\.|рп\.|пгт\.?)\s*', '', s)
-    # Берём первое слово если содержит запятую (адресная строка)
-    if ',' in s:
-        s = s.split(',')[0].strip()
-    return s.strip()
+# --- Загружаем координаты городов из кэша ---
+if CITIES_GEO_CACHE_PATH.exists():
+    city_coords = pd.read_excel(CITIES_GEO_CACHE_PATH)
+    city_coords.columns = city_coords.columns.str.strip().str.lower()
+    city_coords = city_coords.dropna(subset=["lat", "lon"])
+    city_coords = city_coords.rename(columns={"lat": "city_lat", "lon": "city_lon"})
+    print(f"Загружены координаты городов из кэша: {len(city_coords)} городов")
+else:
+    # fallback – средние по магазинам
+    print("Кэш городов не найден, вычисляем средние по магазинам...")
+    city_coords = (
+        geo
+        .groupby("city_name", as_index=False)
+        .agg(
+            city_lat=("lat", "mean"),
+            city_lon=("lon", "mean"),
+        )
+    )
+    city_coords["city_key"] = city_coords["city_name"].apply(normalize_city_for_join)
 
-city_sales["city_key"] = city_sales["city_name"].map(normalize_city_for_join)
-cities_pop_df["city_key"] = cities_pop_df["city"].map(normalize_city_for_join)
-
-# Джойн
+# Объединяем продажи с координатами
 city_merged = city_sales.merge(
-    cities_pop_df[["city_key", "city", "region", "federal_district", "population"]],
-    on="city_key",
-    how="left"
-)
-
-# Для ненайденных — попробуем fuzzy через contains
-not_found = city_merged[city_merged["population"].isna()].copy()
-found = city_merged[city_merged["population"].notna()].copy()
-print(f"  Городов найдено в базе населения: {len(found)}")
-print(f"  Городов не найдено: {len(not_found)}")
-if len(not_found) > 0:
-    print(f"  Примеры ненайденных: {not_found['city_name'].head(10).tolist()}")
-
-# Геокодируем центры городов для слоя "душа"
-# Используем средние координаты магазинов в этом городе
-city_coords = (
-    geo
-    .groupby("city_name", as_index=False)
-    .agg(
-        city_lat=("lat", "mean"),
-        city_lon=("lon", "mean"),
-    )
-)
-city_coords["city_key"] = city_coords["city_name"].map(normalize_city_for_join)
-
-city_merged2 = city_merged.merge(
     city_coords[["city_key", "city_lat", "city_lon"]],
     on="city_key",
     how="left"
 )
 
-# Оставляем только города с координатами
-city_layer = city_merged2.dropna(subset=["city_lat", "city_lon", "city_qty"]).copy()
+# --- Присоединяем население из cities_pop_df ---
+if not cities_pop_df.empty:
+    city_merged = city_merged.merge(
+        cities_pop_df[["city_key", "population"]],
+        on="city_key",
+        how="left"
+    )
+else:
+    city_merged["population"] = np.nan
 
-# Считаем продажи на душу населения
-city_layer["qty_per_capita"] = np.where(
-    city_layer["population"].notna() & (city_layer["population"] > 0),
-    city_layer["city_qty"] / city_layer["population"],
+# Рассчитываем продажи на 1000 жителей
+city_merged["qty_per_1000"] = np.where(
+    city_merged["population"].notna() & (city_merged["population"] > 0),
+    city_merged["city_qty"] / city_merged["population"] * 1000,
     np.nan
 )
 
-# Продажи на 1000 чел
-city_layer["qty_per_1000"] = city_layer["qty_per_capita"] * 1000
+# Удаляем строки без координат
+city_layer = city_merged.dropna(subset=["city_lat", "city_lon", "city_qty"]).copy()
 
-print(f"\nГородов для слоя 'на душу': {len(city_layer)}")
-print(f"Из них с данными о населении: {city_layer['population'].notna().sum()}")
-print(f"Из них без данных о населении: {city_layer['population'].isna().sum()}")
+# Ранг по продажам на душу
+city_layer["rank_per_capita"] = city_layer["qty_per_1000"].rank(
+    ascending=False, method="min", na_option='keep'
+).astype('Int64')
 
-# Топ-5 городов по продажам на душу
-top5_pc = city_layer.dropna(subset=["qty_per_1000"]).nlargest(5, "qty_per_1000")
-print("\nТоп-5 городов по продажам на 1000 жителей:")
-for _, row in top5_pc.iterrows():
-    print(f"  {row['city_name']}: {row['qty_per_1000']:.2f} шт/1000 чел (население: {row.get('population', 'N/A'):,})")
+# Ранг по абсолютным продажам
+city_layer["rank_abs"] = city_layer["city_qty"].rank(ascending=False, method="min").astype('Int64')
+
+print(f"\nГородов для слоя: {len(city_layer)}")
+print(f"Из них с населением: {city_layer['population'].notna().sum()}")
+
+# (Отладочные print'ы можно оставить или убрать – они не влияют)
+print("------")
+print("Всего продаж fact:", fact["sales_amount_rub"].sum())
+print("Всего продаж city:", city_layer["city_rev"].sum())
+print("------")
+print(city_layer["city_key"].value_counts().head(20))
+print(len(city_sales))
+print(len(city_merged))
+print(len(city_layer))
 
 # ============================================================
-# АГРЕГАЦИЯ ПО ФЕДЕРАЛЬНЫМ ОКРУГАМ — третий слой
+# АГРЕГАЦИЯ ПО РЕГИОНАМ (вместо федеральных округов)
 # ============================================================
-print("\nАгрегируем по федеральным округам...")
+print("\nАгрегируем продажи по регионам...")
 
-# Джойним факт с данными о ФО через city_key
-fact_with_fd = fact.copy()
-fact_with_fd["city_key"] = fact_with_fd["city_name"].map(normalize_city_for_join)
-
-city_to_fd = cities_pop_df[["city_key", "federal_district", "region", "population"]].drop_duplicates("city_key")
-fact_with_fd = fact_with_fd.merge(city_to_fd, on="city_key", how="left")
-
-fd_sales = (
-    fact_with_fd.dropna(subset=["federal_district"])
-    .groupby("federal_district", as_index=False)
+region_sales = (
+    geo
+    .groupby("region_name", as_index=False)
     .agg(
-        fd_qty=("sales_quantity", "sum"),
-        fd_rev=("sales_amount_rub", "sum"),
-        fd_stores=("store_key", "nunique"),
-        fd_cities=("city_name", "nunique"),
+        region_qty=("sales_qty", "sum"),
+        region_rev=("revenue_rub", "sum"),
+        region_stores=("store_key", "nunique"),
+        region_cities=("city_name", "nunique"),
     )
 )
 
-# Суммарное население по ФО
-pop_by_fd = (
-    cities_pop_df
-    .groupby("federal_district", as_index=False)
-    .agg(fd_population=("population", "sum"))
+# Удаляем регионы без названия
+region_sales = region_sales[region_sales["region_name"].notna() & region_sales["region_name"].str.strip().ne("")]
+
+# Координаты регионов – средние по магазинам в регионе
+region_coords = (
+    geo
+    .groupby("region_name", as_index=False)
+    .agg(
+        region_lat=("lat", "mean"),
+        region_lon=("lon", "mean"),
+    )
 )
 
-fd_sales = fd_sales.merge(pop_by_fd, on="federal_district", how="left")
-fd_sales["fd_qty_per_1000"] = np.where(
-    fd_sales["fd_population"] > 0,
-    fd_sales["fd_qty"] / fd_sales["fd_population"] * 1000,
-    np.nan
-)
+region_sales = region_sales.merge(region_coords, on="region_name", how="inner")
+region_sales = region_sales.dropna(subset=["region_lat", "region_lon"])
 
-# Координаты центров ФО (приблизительные)
-FD_CENTERS = {
-    "Центральный":          (55.75, 37.60),
-    "Северо-Западный":      (59.93, 30.32),
-    "Южный":                (45.04, 38.98),
-    "Северо-Кавказский":    (43.50, 43.60),
-    "Приволжский":          (56.26, 50.19),
-    "Уральский":            (60.60, 56.83),
-    "Сибирский":            (54.99, 82.90),
-    "Дальневосточный":      (51.50, 133.60),
-}
-
-fd_sales["fd_lat"] = fd_sales["federal_district"].map(lambda x: FD_CENTERS.get(x, (None, None))[0])
-fd_sales["fd_lon"] = fd_sales["federal_district"].map(lambda x: FD_CENTERS.get(x, (None, None))[1])
-
-print("Федеральные округа:")
-for _, row in fd_sales.iterrows():
-    print(f"  {row['federal_district']}: {row['fd_qty']:,.0f} шт, {row.get('fd_qty_per_1000', 0):.2f}/1000 чел")
+print(f"Регионов с данными: {len(region_sales)}")
+for _, row in region_sales.iterrows():
+    print(f"  {row['region_name']}: {row['region_qty']:,.0f} шт, {row['region_rev']:,.0f} ₽")
 
 # ============================================================
-# ПОДГОТОВКА JSON ДЛЯ КАРТЫ
+# ПОДГОТОВКА JSON
 # ============================================================
 def safe_float(x):
     try:
@@ -783,6 +922,7 @@ color_map = {
     "Перекресток":     "#E63946",
     "Перекресток-Джем": "#F4A261",
     "X5 United":       "#457B9D",
+    "Магнит":          "#FFA500",   # оранжевый
 }
 
 if len(geo) == 0:
@@ -794,13 +934,13 @@ center_lon = float(geo["lon"].mean())
 max_rev = max(float(geo["revenue_rub"].max()), 1.0)
 
 # --- Слой 1: магазины ---
-stores_data = []
+stores_full = []
 for _, row in geo.iterrows():
     sk = row["store_key"]
     rev = float(row["revenue_rub"])
     r = max(5.0, min(23.0, 5 + 18 * math.sqrt(rev / max_rev)))
 
-    stores_data.append({
+    stores_full.append({
         "store_key": str(sk),
         "store_code": norm(row.get("store_code")),
         "name": norm(row.get("store_name")) or "Магазин",
@@ -827,68 +967,137 @@ for _, row in geo.iterrows():
         "radius": round(r, 2),
     })
 
-# --- Слой 2: города (продажи на душу) ---
-max_qty_city = float(city_layer["city_qty"].max()) if len(city_layer) > 0 else 1.0
-max_pc = float(city_layer["qty_per_1000"].max(skipna=True)) if city_layer["qty_per_1000"].notna().any() else 1.0
+stores_light = []
+for s in stores_full:
+    stores_light.append({
+        "lat": s["lat"],
+        "lon": s["lon"],
+        "r": s["radius"],
+        "c": s["chain"],
+        "n": s["name"],
+        "rev": s["rev"],
+        "qty": s["qty"],
+        "id": s["store_key"]
+    })
 
-cities_data = []
+details_dict = {}
+for s in stores_full:
+    details_dict[s["store_key"]] = {
+        "store_code": s["store_code"],
+        "address": s["address"],
+        "full_address": s["full_address"],
+        "city": s["city"],
+        "region": s["region"],
+        "format": s["format"],
+        "avg_price": s["avg_price"],
+        "avg_cost": s["avg_cost"],
+        "avg_month_rev": s["avg_month_rev"],
+        "periods_count": s["periods_count"],
+        "brands_count": s["brands_count"],
+        "top_brand": s["top_brand"],
+        "geo_precision": s["geo_precision"],
+        "top5": s["top5"],
+        "all_brands": s["all_brands"],
+        "dyn": s["dyn"]
+    }
+
+# --- Слой 2: города ---
+cities_full = []
+max_qty_city = float(city_layer["city_qty"].max()) if len(city_layer) > 0 else 1.0
+
 for _, row in city_layer.iterrows():
     qty = float(row["city_qty"])
-    r_abs = max(6.0, min(40.0, 6 + 34 * math.sqrt(qty / max(max_qty_city, 1))))
-    pc = safe_float(row.get("qty_per_1000"))
-    # r для per-capita (нормируем)
-    r_pc = max(6.0, min(40.0, 6 + 34 * math.sqrt((pc or 0) / max(max_pc, 1)))) if pc else 6.0
+    rev = float(row["city_rev"])
+    r = max(6.0, min(40.0, 6 + 34 * math.sqrt(qty / max_qty_city)))
+    pop = safe_int(row.get("population"))
+    qty_per_1000 = safe_float(row.get("qty_per_1000"))
+    rank_abs = safe_int(row.get("rank_abs"))
+    rank_per_capita = safe_int(row.get("rank_per_capita"))
 
-    cities_data.append({
+    cities_full.append({
         "city": norm(row.get("city_name")),
-        "city_official": norm(row.get("city")) or norm(row.get("city_name")),
-        "region": norm(row.get("region")) or norm(row.get("city_name")),
-        "federal_district": norm(row.get("federal_district")) or "—",
+        "region": norm(row.get("region_name")),
         "lat": float(row["city_lat"]),
         "lon": float(row["city_lon"]),
         "qty": qty,
-        "rev": float(row["city_rev"]),
+        "rev": rev,
         "stores": safe_int(row.get("city_stores")),
-        "population": safe_int(row.get("population")),
-        "qty_per_1000": pc,
-        "radius_abs": round(r_abs, 2),
-        "radius_pc": round(r_pc, 2),
+        "population": pop,
+        "qty_per_1000": qty_per_1000,
+        "radius": round(r, 2),
+        "rank_abs": rank_abs,
+        "rank_per_capita": rank_per_capita,
     })
 
-# --- Слой 3: федеральные округа ---
-max_fd_qty = float(fd_sales["fd_qty"].max()) if len(fd_sales) > 0 else 1.0
-max_fd_pc = float(fd_sales["fd_qty_per_1000"].max(skipna=True)) if fd_sales["fd_qty_per_1000"].notna().any() else 1.0
+cities_light = []
+for c in cities_full:
+    cities_light.append({
+        "lat": c["lat"],
+        "lon": c["lon"],
+        "r": c["radius"],
+        "city": c["city"],
+        "region": c["region"],
+        "qty": c["qty"],
+        "rev": c["rev"],
+        "stores": c["stores"],
+        "population": c["population"],
+        "qty_per_1000": c["qty_per_1000"],
+        "rank_abs": c["rank_abs"],
+        "rank_per_capita": c["rank_per_capita"],
+    })
 
-fd_data = []
-for _, row in fd_sales.dropna(subset=["fd_lat", "fd_lon"]).iterrows():
-    qty = float(row["fd_qty"])
-    r = max(20.0, min(70.0, 20 + 50 * math.sqrt(qty / max(max_fd_qty, 1))))
-    pc = safe_float(row.get("fd_qty_per_1000"))
+# --- Слой 3: регионы ---
+regions_full = []
+max_region_qty = float(region_sales["region_qty"].max()) if len(region_sales) > 0 else 1.0
 
-    fd_data.append({
-        "name": norm(row.get("federal_district")),
-        "lat": float(row["fd_lat"]),
-        "lon": float(row["fd_lon"]),
+for _, row in region_sales.iterrows():
+    qty = float(row["region_qty"])
+    r = max(15.0, min(60.0, 15 + 45 * math.sqrt(qty / max_region_qty)))
+    regions_full.append({
+        "name": norm(row["region_name"]),
+        "lat": float(row["region_lat"]),
+        "lon": float(row["region_lon"]),
         "qty": qty,
-        "rev": float(row["fd_rev"]),
-        "stores": safe_int(row.get("fd_stores")),
-        "cities": safe_int(row.get("fd_cities")),
-        "population": safe_int(row.get("fd_population")),
-        "qty_per_1000": pc,
+        "rev": float(row["region_rev"]),
+        "stores": safe_int(row.get("region_stores")),
+        "cities": safe_int(row.get("region_cities")),
         "radius": round(r, 2),
     })
 
-stores_json = json.dumps(stores_data, ensure_ascii=False)
-cities_json = json.dumps(cities_data, ensure_ascii=False)
-fd_json = json.dumps(fd_data, ensure_ascii=False)
-color_map_json = json.dumps(color_map, ensure_ascii=False)
-
-print(f"\nТочек (магазины): {len(stores_data)}")
-print(f"Точек (города): {len(cities_data)}")
-print(f"Точек (ФО): {len(fd_data)}")
+regions_light = []
+for r in regions_full:
+    regions_light.append({
+        "lat": r["lat"],
+        "lon": r["lon"],
+        "r": r["radius"],
+        "name": r["name"],
+        "qty": r["qty"],
+        "rev": r["rev"],
+        "stores": r["stores"],
+        "cities": r["cities"],
+    })
 
 # ============================================================
-# HTML ТЕМПЛЕЙТ
+# СОХРАНЕНИЕ JSON
+# ============================================================
+stores_json_path = DATA_DIR / "stores.json"
+cities_json_path = DATA_DIR / "cities.json"
+regions_json_path = DATA_DIR / "regions.json"
+details_json_path = DATA_DIR / "details.json"
+
+with open(stores_json_path, "w", encoding="utf-8") as f:
+    json.dump(stores_light, f, ensure_ascii=False, separators=(',', ':'))
+with open(cities_json_path, "w", encoding="utf-8") as f:
+    json.dump(cities_light, f, ensure_ascii=False, separators=(',', ':'))
+with open(regions_json_path, "w", encoding="utf-8") as f:
+    json.dump(regions_light, f, ensure_ascii=False, separators=(',', ':'))
+with open(details_json_path, "w", encoding="utf-8") as f:
+    json.dump(details_dict, f, ensure_ascii=False, separators=(',', ':'))
+
+print(f"\nJSON-файлы сохранены:\n  {stores_json_path}\n  {cities_json_path}\n  {regions_json_path}\n  {details_json_path}")
+
+# ============================================================
+# HTML ТЕМПЛЕЙТ (с /data/ путями, как у вас работало)
 # ============================================================
 HTML_TEMPLATE = r"""
 <!DOCTYPE html>
@@ -904,13 +1113,9 @@ HTML_TEMPLATE = r"""
 
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
-        html, body, #map {
-            height:100%; width:100%;
-            font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
-        }
+        html, body, #map { height:100%; width:100%; font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; }
         #map { background:#f0f4f9; }
 
-        /* TOP PANEL */
         .top-panel {
             position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:10000;
             background:rgba(255,255,255,0.92); backdrop-filter:blur(16px) saturate(180%);
@@ -927,7 +1132,6 @@ HTML_TEMPLATE = r"""
         .stat-label { font-size:10px; font-weight:600; color:#8a99aa; text-transform:uppercase; letter-spacing:0.5px; margin-top:2px; }
         .stat-divider { width:1px; height:32px; background:#e4e9f0; }
 
-        /* LAYER SWITCHER */
         #layer-switcher {
             position:fixed; top:16px; left:24px; z-index:10001;
             background:rgba(255,255,255,0.95); backdrop-filter:blur(16px);
@@ -951,7 +1155,6 @@ HTML_TEMPLATE = r"""
         .layer-label { font-size:13px; font-weight:600; color:#1a2634; line-height:1.3; }
         .layer-sub { font-size:10px; color:#8a99aa; margin-top:1px; }
 
-        /* FILTER TOGGLE */
         #filter-toggle {
             position:fixed; top:20px; right:24px; z-index:10001;
             border:none; border-radius:14px; padding:10px 18px;
@@ -962,7 +1165,6 @@ HTML_TEMPLATE = r"""
         }
         #filter-toggle:hover { background:rgba(255,255,255,0.98); transform:translateY(-1px); }
 
-        /* FILTERS PANEL */
         #filters {
             position:fixed; top:76px; right:24px; width:320px; z-index:10001;
             background:rgba(255,255,255,0.95); backdrop-filter:blur(20px);
@@ -990,30 +1192,90 @@ HTML_TEMPLATE = r"""
         .btn-reset { background:#f0f4f9; color:#324155; }
         .btn-reset:hover { background:#e4e9f0; }
 
+        /* ===== СТИЛЬНЫЙ ФИЛЬТР СЕТЕЙ ===== */
         .chain-filter-group { margin-bottom:14px; }
-        .chain-filter-group label.group-label { display:block; font-size:11px; font-weight:600; color:#6b7a8d; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; }
-        .chain-checkbox { display:flex; align-items:center; gap:8px; margin:6px 0; cursor:pointer; font-size:13px; color:#1a2634; }
-        .chain-checkbox input[type="checkbox"] { width:16px; height:16px; accent-color:#4f7cff; cursor:pointer; }
-        .chain-dot { width:12px; height:12px; border-radius:50%; flex-shrink:0; border:1px solid rgba(0,0,0,0.06); }
+        .chain-filter-group .group-label {
+            display:block; font-size:11px; font-weight:600; color:#6b7a8d;
+            text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;
+        }
+        .chain-checkbox-wrap {
+            display:flex; flex-wrap:wrap; gap:8px;
+        }
+        .chain-checkbox-btn {
+            display:flex; align-items:center; gap:6px;
+            padding:6px 14px; border-radius:20px;
+            border:2px solid #e4e9f0; background:#fff;
+            font-size:13px; font-weight:600; color:#1a2634;
+            cursor:pointer; transition:all 0.2s ease;
+            user-select:none; font-family:inherit;
+        }
+        .chain-checkbox-btn:hover {
+            border-color:#b0c4d8; background:#f8fafc;
+        }
+        .chain-checkbox-btn.active {
+            border-color:#4f7cff; background:#EEF3FF;
+            box-shadow:0 2px 8px rgba(79,124,255,0.15);
+        }
+        .chain-checkbox-btn .dot {
+            width:12px; height:12px; border-radius:50%; flex-shrink:0;
+            border:1px solid rgba(0,0,0,0.06);
+        }
+        .chain-checkbox-btn input[type="checkbox"] { display:none; }
+        .chain-checkbox-btn .count {
+            font-weight:400; color:#8a99aa; font-size:11px; margin-left:2px;
+        }
 
-        .filters-note { margin-top:16px; padding-top:14px; border-top:1px solid #eef2f7; font-size:12px; color:#6b7a8d; line-height:1.6; }
+        /* ===== ДОП. ФИЛЬТР ДЛЯ ГОРОДОВ ===== */
+        .city-filter-group { margin-bottom:14px; display:none; }
+        .city-filter-group label {
+            display:block; font-size:11px; font-weight:600; color:#6b7a8d;
+            text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;
+        }
+        .city-filter-group select {
+            width:100%; border:1.5px solid #e4e9f0; border-radius:12px;
+            padding:10px 14px; font-size:13px; outline:none; background:#fff;
+            color:#1a2634; transition:border-color 0.2s ease; font-family:inherit;
+        }
+        .city-filter-group select:focus { border-color:#4f7cff; }
 
-        /* LEGEND */
+        .filters-note {
+            margin-top:16px; padding-top:14px; border-top:1px solid #eef2f7;
+            font-size:12px; color:#6b7a8d; line-height:1.6;
+        }
+
+        /* ===== ЛЕГЕНДА ===== */
         #legend {
             position:fixed; left:20px; bottom:24px; z-index:10000;
             background:rgba(255,255,255,0.92); backdrop-filter:blur(12px);
             border-radius:16px; padding:16px 20px;
-            box-shadow:0 4px 24px rgba(0,0,0,0.08); border:1px solid rgba(255,255,255,0.6);
-            min-width:200px; max-width:260px;
+            box-shadow:0 4px 24px rgba(0,0,0,0.08);
+            border:1px solid rgba(255,255,255,0.6);
+            min-width:180px; max-width:260px;
+            transition:all 0.3s ease;
         }
-        .legend-title { font-weight:700; font-size:13px; color:#1a2634; margin-bottom:10px; }
-        .legend-row { display:flex; align-items:center; gap:10px; margin:6px 0; font-size:12px; color:#324155; }
-        .legend-dot { width:12px; height:12px; border-radius:50%; flex-shrink:0; border:1px solid rgba(0,0,0,0.06); }
-        .legend-count { font-weight:600; color:#8a99aa; margin-left:auto; font-size:11px; }
+        .legend-title {
+            font-weight:700; font-size:13px; color:#1a2634; margin-bottom:10px;
+            display:flex; align-items:center; gap:8px;
+        }
+        .legend-title .icon { font-size:16px; }
+        .legend-item {
+            display:flex; align-items:center; gap:10px; margin:6px 0;
+            font-size:12px; color:#324155; padding:4px 6px;
+            border-radius:8px; transition:background 0.2s;
+        }
+        .legend-item:hover { background:rgba(0,0,0,0.04); }
+        .legend-dot {
+            width:14px; height:14px; border-radius:50%; flex-shrink:0;
+            border:1px solid rgba(0,0,0,0.06); box-shadow:0 1px 3px rgba(0,0,0,0.1);
+        }
+        .legend-label { flex:1; }
+        .legend-count {
+            font-weight:600; color:#8a99aa; font-size:11px;
+            background:#f0f4f9; padding:0 8px; border-radius:12px; line-height:20px;
+        }
         .legend-divider { border:none; border-top:1px solid #eef2f7; margin:10px 0; }
         .legend-hint { font-size:11px; color:#8a99aa; line-height:1.5; }
 
-        /* COLORBAR для слоя душа населения */
         .colorbar-wrap { margin-top:8px; }
         .colorbar { height:10px; border-radius:8px; margin:4px 0; }
         .colorbar-labels { display:flex; justify-content:space-between; font-size:10px; color:#8a99aa; }
@@ -1021,59 +1283,130 @@ HTML_TEMPLATE = r"""
         /* POPUPS */
         .store-popup { width:400px; font-family:inherit; color:#1a2634; }
         .city-popup { width:340px; font-family:inherit; color:#1a2634; }
-        .fd-popup { width:320px; font-family:inherit; color:#1a2634; }
+        .region-popup { width:320px; font-family:inherit; color:#1a2634; }
 
         .popup-header { padding:16px 20px; border-radius:16px 16px 0 0; }
-        .popup-header .badge { display:inline-block; background:rgba(255,255,255,0.2); padding:2px 10px; border-radius:20px; font-size:10px; font-weight:600; color:#fff; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
+        .popup-header .badge {
+            display:inline-block; background:rgba(255,255,255,0.2);
+            padding:2px 10px; border-radius:20px; font-size:10px;
+            font-weight:600; color:#fff; text-transform:uppercase;
+            letter-spacing:0.5px; margin-bottom:6px;
+        }
         .popup-title { font-size:17px; font-weight:800; line-height:1.3; color:#fff; }
         .popup-subtitle { margin-top:4px; font-size:12px; opacity:0.9; color:#fff; }
 
-        .popup-body { background:#fafcfe; border:1px solid #eef2f7; border-top:none; border-radius:0 0 16px 16px; padding:16px 20px 20px; }
-        .popup-meta { display:flex; flex-wrap:wrap; gap:4px 16px; font-size:12px; color:#6b7a8d; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #eef2f7; }
+        .popup-body {
+            background:#fafcfe; border:1px solid #eef2f7; border-top:none;
+            border-radius:0 0 16px 16px; padding:16px 20px 20px;
+        }
+        .popup-meta {
+            display:flex; flex-wrap:wrap; gap:4px 16px; font-size:12px;
+            color:#6b7a8d; margin-bottom:14px; padding-bottom:12px;
+            border-bottom:1px solid #eef2f7;
+        }
 
         .kpi-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
         .kpi-grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px; }
-        .mini-kpi { background:#fff; border:1px solid #eef2f7; border-radius:12px; padding:10px 12px; }
+        .mini-kpi {
+            background:#fff; border:1px solid #eef2f7; border-radius:12px;
+            padding:10px 12px;
+        }
         .mini-kpi .val { font-size:15px; font-weight:700; color:#1a2634; }
-        .mini-kpi .lbl { margin-top:3px; font-size:10px; font-weight:600; color:#8a99aa; text-transform:uppercase; letter-spacing:0.3px; }
-
-        .per-capita-kpi { background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); border-radius:14px; padding:14px 16px; margin-bottom:12px; text-align:center; }
-        .per-capita-kpi .big-val { font-size:28px; font-weight:900; color:#fff; }
-        .per-capita-kpi .big-lbl { font-size:11px; color:rgba(255,255,255,0.8); margin-top:4px; text-transform:uppercase; letter-spacing:0.5px; }
-
-        .section-title { margin:14px 0 8px; font-size:11px; font-weight:700; color:#6b7a8d; text-transform:uppercase; letter-spacing:0.5px; }
-        .spark-box { background:#fff; border:1px solid #eef2f7; border-radius:12px; padding:6px 8px; margin-bottom:6px; }
-
-        .brand-list { background:#fff; border:1px solid #eef2f7; border-radius:12px; padding:10px 12px; max-height:300px; overflow-y:auto; }
-        .brand-row { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; margin-bottom:8px; }
-        .brand-row:last-child { margin-bottom:0; }
-        .brand-name { font-size:12px; font-weight:600; color:#1a2634; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .brand-bar-wrap { height:6px; background:#eef2f7; border-radius:999px; overflow:hidden; margin-top:3px; }
-        .brand-bar { height:6px; border-radius:999px; }
-        .brand-val { font-size:12px; font-weight:600; color:#6b7a8d; white-space:nowrap; }
-
-        .show-more-btn {
-            margin-top:10px; padding:8px 16px; background:#f0f4f9; border:1px solid #e4e9f0;
-            border-radius:10px; font-size:12px; font-weight:600; color:#4f7cff; cursor:pointer;
-            width:100%; font-family:inherit;
-            display:flex; align-items:center; justify-content:center; gap:8px;
+        .mini-kpi .lbl {
+            margin-top:3px; font-size:10px; font-weight:600; color:#8a99aa;
+            text-transform:uppercase; letter-spacing:0.3px;
         }
 
-        .popup-footer { margin-top:12px; padding-top:10px; border-top:1px solid #eef2f7; font-size:11px; color:#8a99aa; }
+        .section-title {
+            margin:14px 0 8px; font-size:11px; font-weight:700; color:#6b7a8d;
+            text-transform:uppercase; letter-spacing:0.5px;
+        }
+        .spark-box {
+            background:#fff; border:1px solid #eef2f7; border-radius:12px;
+            padding:6px 8px; margin-bottom:6px;
+        }
 
-        .leaflet-popup-content-wrapper { border-radius:16px !important; padding:0 !important; overflow:hidden; box-shadow:0 16px 48px rgba(0,0,0,0.18) !important; }
+        .brand-list {
+            background:#fff; border:1px solid #eef2f7; border-radius:12px;
+            padding:10px 12px; max-height:300px; overflow-y:auto;
+        }
+        .brand-row {
+            display:grid; grid-template-columns:1fr auto; gap:10px;
+            align-items:center; margin-bottom:8px;
+        }
+        .brand-row:last-child { margin-bottom:0; }
+        .brand-name {
+            font-size:12px; font-weight:600; color:#1a2634;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        }
+        .brand-bar-wrap {
+            height:6px; background:#eef2f7; border-radius:999px;
+            overflow:hidden; margin-top:3px;
+        }
+        .brand-bar { height:6px; border-radius:999px; }
+        .brand-val {
+            font-size:12px; font-weight:600; color:#6b7a8d; white-space:nowrap;
+        }
+        .show-more-btn {
+            margin-top:10px; padding:8px 16px; background:#f0f4f9;
+            border:1px solid #e4e9f0; border-radius:10px; font-size:12px;
+            font-weight:600; color:#4f7cff; cursor:pointer; width:100%;
+            font-family:inherit; display:flex; align-items:center;
+            justify-content:center; gap:8px;
+        }
+        .popup-footer {
+            margin-top:12px; padding-top:10px; border-top:1px solid #eef2f7;
+            font-size:11px; color:#8a99aa;
+        }
+
+        .leaflet-popup-content-wrapper {
+            border-radius:16px !important; padding:0 !important;
+            overflow:hidden; box-shadow:0 16px 48px rgba(0,0,0,0.18) !important;
+        }
         .leaflet-popup-content { margin:0 !important; min-width:300px; }
-        .leaflet-popup-close-button { top:12px !important; right:12px !important; color:rgba(255,255,255,0.7) !important; font-size:20px !important; font-weight:300 !important; }
+        .leaflet-popup-close-button {
+            top:12px !important; right:12px !important;
+            color:rgba(255,255,255,0.7) !important; font-size:20px !important;
+            font-weight:300 !important;
+        }
         .leaflet-popup-close-button:hover { color:#fff !important; }
 
-        /* слой без фильтров */
         .layer-notice {
-            background:#FFF8E1; border:1px solid #FFE082; border-radius:10px; padding:8px 12px;
-            font-size:12px; color:#795548; margin-bottom:12px; display:none;
+            background:#FFF8E1; border:1px solid #FFE082; border-radius:10px;
+            padding:8px 12px; font-size:12px; color:#795548; margin-bottom:12px;
+            display:none;
+        }
+
+        #loading {
+            position:fixed; top:0;left:0;width:100%;height:100%;
+            background:rgba(255,255,255,0.8); z-index:99999;
+            display:flex; flex-direction:column; align-items:center;
+            justify-content:center; font-size:20px; color:#1a2634; font-weight:600;
+        }
+        #loading .spinner {
+            width:50px; height:50px; border:5px solid #eef2f7;
+            border-top-color:#4f7cff; border-radius:50%;
+            animation:spin 0.9s linear infinite; margin-bottom:20px;
+        }
+        @keyframes spin { to { transform:rotate(360deg); } }
+
+        .city-label {
+            pointer-events: none;
+            font-size: 13px;
+            font-weight: 600;
+            color: #1a2634;
+            text-shadow: 0 1px 4px rgba(255,255,255,0.9);
+            background: rgba(255,255,255,0.7);
+            padding: 2px 8px;
+            border-radius: 10px;
+            border: 1px solid rgba(0,0,0,0.08);
+            white-space: nowrap;
+            backdrop-filter: blur(2px);
         }
     </style>
 </head>
 <body>
+    <div id="loading"><div class="spinner"></div>Загрузка данных...</div>
     <div id="map"></div>
 
     <!-- СЛОИ -->
@@ -1092,15 +1425,15 @@ HTML_TEMPLATE = r"""
             <span class="layer-icon">🏙️</span>
             <div>
                 <div class="layer-label">Города</div>
-                <div class="layer-sub">Продажи на душу нас.</div>
+                <div class="layer-sub">Продажи на душу населения</div>
             </div>
         </label>
-        <label class="layer-option" id="lopt-fd" onclick="switchLayer('fd')">
-            <input type="radio" name="layer" value="fd"/>
+        <label class="layer-option" id="lopt-regions" onclick="switchLayer('regions')">
+            <input type="radio" name="layer" value="regions"/>
             <span class="layer-icon">🗺️</span>
             <div>
-                <div class="layer-label">Фед. округа</div>
-                <div class="layer-sub">Сводка по округам</div>
+                <div class="layer-label">Регионы</div>
+                <div class="layer-sub">Сводка по регионам</div>
             </div>
         </label>
     </div>
@@ -1140,10 +1473,9 @@ HTML_TEMPLATE = r"""
             Фильтры по сети/формату работают только в режиме «Магазины»
         </div>
 
-        <!-- Фильтр по сети — только для слоя магазинов -->
         <div class="chain-filter-group" id="chain-filter-block">
             <label class="group-label">Сеть</label>
-            <div id="chain-checkboxes"></div>
+            <div id="chain-checkboxes" class="chain-checkbox-wrap"></div>
         </div>
 
         <div class="filter-group">
@@ -1154,14 +1486,18 @@ HTML_TEMPLATE = r"""
             <label>Город</label>
             <select id="f-city"><option value="">Все города</option></select>
         </div>
-        <div class="filter-group" id="format-filter-block">
-            <label>Формат магазина</label>
-            <select id="f-format"><option value="">Все форматы</option></select>
+        <!-- Фильтр формата магазина УДАЛЁН -->
+
+        <!-- Дополнительный фильтр для городов -->
+        <div class="city-filter-group" id="city-filter-block">
+            <label>Население</label>
+            <select id="sel-population-filter">
+                <option value="all" selected>Все города</option>
+                <option value="only_with_pop">Только с населением</option>
+                <option value="only_without_pop">Только без населения</option>
+            </select>
         </div>
-        <div class="filter-group" id="fd-filter-block" style="display:none;">
-            <label>Федеральный округ</label>
-            <select id="f-fd"><option value="">Все округа</option></select>
-        </div>
+
         <div class="filter-group">
             <label>Поиск</label>
             <input id="f-search" type="text" placeholder="Адрес, город, название..."/>
@@ -1180,45 +1516,20 @@ HTML_TEMPLATE = r"""
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
     <script>
-    // ─── DATA ────────────────────────────────────────────────────────────
-    const STORES   = __STORES_JSON__;
-    const CITIES   = __CITIES_JSON__;
-    const FD_DATA  = __FD_JSON__;
+    // ─── ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ──────────────────────────────────────────
+    let STORES = [];
+    let CITIES = [];
+    let REGIONS_DATA = [];
+    let DETAILS = {};
     const COLOR_MAP = __COLOR_MAP__;
     const DEFAULT_CENTER = [__CENTER_LAT__, __CENTER_LON__];
     const TOTAL_ALL_STORES = __TOTAL_ALL_STORES__;
     const TOTAL_GEO_STORES = __TOTAL_GEO_STORES__;
 
-    // ─── MAP INIT ────────────────────────────────────────────────────────
-    const map = L.map('map', { zoomControl:true, preferCanvas:true }).setView(DEFAULT_CENTER, 5);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        maxZoom:19, attribution:'© OpenStreetMap © CARTO'
-    }).addTo(map);
-
-    // ─── LAYERS ──────────────────────────────────────────────────────────
-    const cluster = L.markerClusterGroup({ chunkedLoading:true, spiderfyOnMaxZoom:true, showCoverageOnHover:false, maxClusterRadius:60 });
-    const cityLayerGroup = L.layerGroup();
-    const fdLayerGroup   = L.layerGroup();
-
-    map.addLayer(cluster); // default
-
+    let map, cluster, cityLayerGroup, regionsLayerGroup;
     let currentLayer = 'stores';
 
-    // ─── UI REFS ─────────────────────────────────────────────────────────
-    const regionSelect  = document.getElementById('f-region');
-    const citySelect    = document.getElementById('f-city');
-    const formatSelect  = document.getElementById('f-format');
-    const fdSelect      = document.getElementById('f-fd');
-    const searchInput   = document.getElementById('f-search');
-    const filtersNote   = document.getElementById('filters-note');
-    const chainCheckboxes = document.getElementById('chain-checkboxes');
-    const legendEl      = document.getElementById('legend');
-    const chainBlock    = document.getElementById('chain-filter-block');
-    const formatBlock   = document.getElementById('format-filter-block');
-    const fdBlock       = document.getElementById('fd-filter-block');
-    const layerNotice   = document.getElementById('layer-notice');
-
-    // ─── UTILS ───────────────────────────────────────────────────────────
+    // ─── УТИЛИТЫ ──────────────────────────────────────────────────────────
     const uniq = arr => [...new Set(arr.filter(x => x && String(x).trim() !== '' && x !== '—'))].sort((a,b) => String(a).localeCompare(String(b),'ru'));
     const esc  = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
     const fmtNum   = n => (n===null||n===undefined||Number.isNaN(Number(n))) ? '—' : Number(n).toLocaleString('ru-RU',{maximumFractionDigits:0});
@@ -1238,18 +1549,15 @@ HTML_TEMPLATE = r"""
         });
     }
 
-    // ─── COLORSCALE (для слоя cities) ────────────────────────────────────
-    // Зелёный (низко) → Жёлтый → Оранжевый → Красный (высоко)
     function perCapitaColor(value, min, max) {
         if (value === null || value === undefined) return '#aaaaaa';
         const t = Math.max(0, Math.min(1, (value - min) / Math.max(max - min, 0.001)));
-        // Градиент: синий → голубой → зелёный → жёлтый → оранжевый → красный
         const stops = [
-            [0,   [99,  179, 237]],  // голубой
-            [0.25,[72,  187, 120]],  // зелёный
-            [0.5, [246, 224,  94]],  // жёлтый
-            [0.75,[237, 137,  54]],  // оранжевый
-            [1.0, [197,  48,  48]],  // красный
+            [0,   [99,  179, 237]],
+            [0.25,[72,  187, 120]],
+            [0.5, [246, 224,  94]],
+            [0.75,[237, 137,  54]],
+            [1.0, [197,  48,  48]],
         ];
         let r=stops[0][1][0], g=stops[0][1][1], b=stops[0][1][2];
         for (let i=0; i<stops.length-1; i++) {
@@ -1266,63 +1574,9 @@ HTML_TEMPLATE = r"""
         return `rgb(${r},${g},${b})`;
     }
 
-    // Цвета для ФО
-    const FD_COLORS = [
-        '#E63946','#457B9D','#2A9D8F','#E9C46A',
-        '#F4A261','#264653','#A8DADC','#6D6875'
-    ];
+    const REGION_COLORS = ['#E63946','#457B9D','#2A9D8F','#E9C46A','#F4A261','#264653','#A8DADC','#6D6875','#8E5CF6','#E67E22','#2ECC71','#3498DB','#9B59B6','#1ABC9C','#F39C12','#D35400','#C0392B','#2980B9','#7F8C8D','#27AE60'];
 
-    // ─── INIT SELECTS ─────────────────────────────────────────────────────
-    const CHAINS  = uniq(STORES.map(x => x.chain));
-    const REGIONS = uniq(STORES.map(x => x.region));
-    const FORMATS = uniq(STORES.map(x => x.format).filter(x => x && x !== '—'));
-    const FDS     = uniq(FD_DATA.map(x => x.name));
-    const ALL_CITIES = uniq([...STORES.map(x => x.city), ...CITIES.map(x => x.city)]);
-
-    fillSelect(regionSelect, REGIONS, 'Все регионы');
-    fillSelect(citySelect, ALL_CITIES, 'Все города');
-    fillSelect(formatSelect, FORMATS, 'Все форматы');
-    fillSelect(fdSelect, FDS, 'Все округа');
-
-    // Чекбоксы по сетям
-    function buildChainCheckboxes() {
-        const counts = {};
-        STORES.forEach(s => { counts[s.chain] = (counts[s.chain]||0)+1; });
-        chainCheckboxes.innerHTML = '';
-        CHAINS.forEach(chain => {
-            const color = COLOR_MAP[chain] || '#7c8798';
-            const lbl = document.createElement('label');
-            lbl.className = 'chain-checkbox';
-            lbl.innerHTML = `
-                <input type="checkbox" value="${chain}" checked/>
-                <span class="chain-dot" style="background:${color};"></span>
-                ${chain} <span style="color:#8a99aa;font-size:11px;">(${counts[chain]||0})</span>`;
-            chainCheckboxes.appendChild(lbl);
-        });
-    }
-    buildChainCheckboxes();
-
-    function getSelectedChains() {
-        return [...chainCheckboxes.querySelectorAll('input[type="checkbox"]')]
-            .filter(cb => cb.checked).map(cb => cb.value);
-    }
-
-    function updateCityOptions() {
-        const region = regionSelect.value;
-        let rows = (currentLayer === 'cities') ? CITIES : STORES;
-        if (region) rows = rows.filter(x => x.region === region);
-        if (currentLayer === 'stores') {
-            const chains = getSelectedChains();
-            if (chains.length < CHAINS.length) rows = rows.filter(x => chains.includes(x.chain));
-        }
-        const cities = uniq(rows.map(x => x.city));
-        const cur = citySelect.value;
-        fillSelect(citySelect, cities, 'Все города');
-        if (cities.includes(cur)) citySelect.value = cur;
-    }
-    regionSelect.addEventListener('change', updateCityOptions);
-
-    // ─── SPARKLINE ────────────────────────────────────────────────────────
+    // ─── ПОПАПЫ ──────────────────────────────────────────────────────────
     function sparkline(values, color) {
         if (!values || values.length < 2) return '<div style="padding:8px 4px;color:#b0c0d0;font-size:12px;">Нет данных</div>';
         const w=340, h=40;
@@ -1336,7 +1590,6 @@ HTML_TEMPLATE = r"""
         </svg>`;
     }
 
-    // ─── BRANDS HTML ──────────────────────────────────────────────────────
     function buildBrandsHtml(allBrands) {
         if (!allBrands || allBrands.length === 0) return '<div style="font-size:12px;color:#b0c0d0;padding:8px 12px;">Нет данных</div>';
         const palette=['#E63946','#457B9D','#F4A261','#2A9D8F','#8E5CF6','#E67E22','#2ECC71','#3498DB','#9B59B6','#1ABC9C'];
@@ -1369,36 +1622,35 @@ HTML_TEMPLATE = r"""
         else { moreBlock.style.display='none'; btn.innerHTML=`📊 Показать все (${total})`; }
     };
 
-    // ─── POPUPS ────────────────────────────────────────────────────────────
-    function makeStorePopup(store) {
-        const color = COLOR_MAP[store.chain] || '#7c8798';
+    function makeStorePopup(store, detail) {
+        const color = COLOR_MAP[store.c] || '#7c8798';
         return `<div class="store-popup">
             <div class="popup-header" style="background:linear-gradient(135deg,${color} 0%,#1a2634 100%);">
-                <div class="badge">${esc(store.chain||'—')}</div>
-                <div class="popup-title">🏪 ${esc(store.name)}</div>
-                <div class="popup-subtitle">${esc(store.format||'—')} · code: ${esc(store.store_code||'—')}</div>
+                <div class="badge">${esc(store.c||'—')}</div>
+                <div class="popup-title">🏪 ${esc(store.n)}</div>
+                <div class="popup-subtitle">${esc(detail.format||'—')} · code: ${esc(detail.store_code||'—')}</div>
             </div>
             <div class="popup-body">
                 <div class="popup-meta">
-                    <span>📍 ${esc(store.address||'—')}</span>
-                    <span>🏙️ ${esc(store.city||'—')}</span>
-                    <span>🧭 ${esc(store.geo_precision||'—')}</span>
+                    <span>📍 ${esc(detail.address||'—')}</span>
+                    <span>🏙️ ${esc(detail.city||'—')}</span>
+                    <span>🧭 ${esc(detail.geo_precision||'—')}</span>
                 </div>
                 <div class="kpi-grid">
                     <div class="mini-kpi"><div class="val" style="color:#E63946;">${fmtMoney(store.rev)}</div><div class="lbl">Выручка</div></div>
                     <div class="mini-kpi"><div class="val" style="color:#457B9D;">${fmtNum(store.qty)} шт</div><div class="lbl">Продажи</div></div>
-                    <div class="mini-kpi"><div class="val">${fmtPrice(store.avg_price)}</div><div class="lbl">Средняя цена</div></div>
-                    <div class="mini-kpi"><div class="val">${fmtPrice(store.avg_cost)}</div><div class="lbl">Себестоимость</div></div>
-                    <div class="mini-kpi"><div class="val">${fmtNum(store.periods_count)}</div><div class="lbl">Периодов</div></div>
-                    <div class="mini-kpi"><div class="val">${fmtMoney(store.avg_month_rev)}</div><div class="lbl">Ср. выручка/мес</div></div>
+                    <div class="mini-kpi"><div class="val">${fmtPrice(detail.avg_price)}</div><div class="lbl">Средняя цена</div></div>
+                    <div class="mini-kpi"><div class="val">${fmtPrice(detail.avg_cost)}</div><div class="lbl">Себестоимость</div></div>
+                    <div class="mini-kpi"><div class="val">${fmtNum(detail.periods_count)}</div><div class="lbl">Периодов</div></div>
+                    <div class="mini-kpi"><div class="val">${fmtMoney(detail.avg_month_rev)}</div><div class="lbl">Ср. выручка/мес</div></div>
                 </div>
                 <div class="section-title">📈 Динамика выручки</div>
-                <div class="spark-box">${sparkline(store.dyn?.rev||[], color)}</div>
+                <div class="spark-box">${sparkline(detail.dyn?.rev||[], color)}</div>
                 <div class="section-title">📦 Динамика продаж</div>
-                <div class="spark-box">${sparkline(store.dyn?.qty||[], '#457B9D')}</div>
+                <div class="spark-box">${sparkline(detail.dyn?.qty||[], '#457B9D')}</div>
                 <div class="section-title">🏷️ Бренды</div>
-                ${buildBrandsHtml(store.all_brands||[])}
-                <div class="popup-footer">Брендов: <strong>${fmtNum(store.brands_count)}</strong> · Топ: <strong>${esc(store.top_brand||'—')}</strong></div>
+                ${buildBrandsHtml(detail.all_brands||[])}
+                <div class="popup-footer">Брендов: <strong>${fmtNum(detail.brands_count)}</strong> · Топ: <strong>${esc(detail.top_brand||'—')}</strong></div>
             </div>
         </div>`;
     }
@@ -1406,51 +1658,47 @@ HTML_TEMPLATE = r"""
     function makeCityPopup(city) {
         const pc = city.qty_per_1000;
         const hasPopulation = city.population !== null && city.population !== undefined;
+        const rank = city.rank_per_capita ? `#${city.rank_per_capita} ` : '';
+        const popStr = hasPopulation ? fmtNum(city.population) : 'Нет данных';
+        const pcStr = pc !== null && pc !== undefined ? fmtPc(pc) : '—';
         return `<div class="city-popup">
             <div class="popup-header" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);">
-                <div class="badge">ГОРОД</div>
+                <div class="badge">${rank}ГОРОД</div>
                 <div class="popup-title">🏙️ ${esc(city.city)}</div>
-                <div class="popup-subtitle">${esc(city.federal_district||'—')} · ${esc(city.region||'—')}</div>
+                <div class="popup-subtitle">${esc(city.region||'—')}</div>
             </div>
             <div class="popup-body">
                 ${hasPopulation ? `
                 <div class="per-capita-kpi">
-                    <div class="big-val">${fmtPc(pc)}</div>
+                    <div class="big-val">${pcStr}</div>
                     <div class="big-lbl">продаж на 1 000 жителей</div>
                 </div>` : `<div style="background:#fff3cd;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#856404;">
-                    ℹ️ Данные о населении не найдены — показатель н/д
+                    ℹ️ Данные о населении не найдены
                 </div>`}
                 <div class="kpi-grid">
                     <div class="mini-kpi"><div class="val" style="color:#764ba2;">${fmtNum(city.qty)} шт</div><div class="lbl">Всего продаж</div></div>
                     <div class="mini-kpi"><div class="val" style="color:#E63946;">${fmtMoney(city.rev)}</div><div class="lbl">Выручка</div></div>
                     <div class="mini-kpi"><div class="val">${fmtNum(city.stores)}</div><div class="lbl">Магазинов</div></div>
-                    <div class="mini-kpi"><div class="val">${hasPopulation ? fmtNum(city.population) : '—'}</div><div class="lbl">Население</div></div>
+                    <div class="mini-kpi"><div class="val">${popStr}</div><div class="lbl">Население</div></div>
                 </div>
             </div>
         </div>`;
     }
 
-    function makeFdPopup(fd, color) {
-        const pc = fd.qty_per_1000;
-        return `<div class="fd-popup">
+    function makeRegionPopup(region, color) {
+        return `<div class="region-popup">
             <div class="popup-header" style="background:linear-gradient(135deg,${color} 0%,#1a2634 100%);">
-                <div class="badge">ФЕДЕРАЛЬНЫЙ ОКРУГ</div>
-                <div class="popup-title">🗺️ ${esc(fd.name)}</div>
+                <div class="badge">РЕГИОН</div>
+                <div class="popup-title">🗺️ ${esc(region.name)}</div>
             </div>
             <div class="popup-body">
-                ${pc !== null && pc !== undefined ? `
-                <div class="per-capita-kpi" style="background:linear-gradient(135deg,${color} 0%,#1a2634 100%);">
-                    <div class="big-val">${fmtPc(pc)}</div>
-                    <div class="big-lbl">продаж на 1 000 жителей</div>
-                </div>` : ''}
                 <div class="kpi-grid-3">
-                    <div class="mini-kpi"><div class="val" style="color:#E63946;">${fmtNum(fd.qty)}</div><div class="lbl">Продажи, шт</div></div>
-                    <div class="mini-kpi"><div class="val">${fmtNum(fd.stores)}</div><div class="lbl">Магазинов</div></div>
-                    <div class="mini-kpi"><div class="val">${fmtNum(fd.cities)}</div><div class="lbl">Городов</div></div>
+                    <div class="mini-kpi"><div class="val" style="color:#E63946;">${fmtNum(region.qty)}</div><div class="lbl">Продажи, шт</div></div>
+                    <div class="mini-kpi"><div class="val">${fmtNum(region.stores)}</div><div class="lbl">Магазинов</div></div>
+                    <div class="mini-kpi"><div class="val">${fmtNum(region.cities)}</div><div class="lbl">Городов</div></div>
                 </div>
                 <div class="kpi-grid">
-                    <div class="mini-kpi"><div class="val" style="color:#E63946;">${fmtMoney(fd.rev)}</div><div class="lbl">Выручка</div></div>
-                    <div class="mini-kpi"><div class="val">${fmtNum(fd.population)}</div><div class="lbl">Население (ГиС)</div></div>
+                    <div class="mini-kpi"><div class="val" style="color:#E63946;">${fmtMoney(region.rev)}</div><div class="lbl">Выручка</div></div>
                 </div>
             </div>
         </div>`;
@@ -1458,8 +1706,8 @@ HTML_TEMPLATE = r"""
 
     // ─── KPI UPDATE ────────────────────────────────────────────────────────
     function updateKpi(rows, layer) {
-        const rev = rows.reduce((a,x)=>a+Number(x.rev||x.city_rev||x.fd_rev||0),0);
-        const qty = rows.reduce((a,x)=>a+Number(x.qty||x.city_qty||x.fd_qty||0),0);
+        const rev = rows.reduce((a,x)=>a+Number(x.rev||x.rev||0),0);
+        const qty = rows.reduce((a,x)=>a+Number(x.qty||x.qty||0),0);
         document.getElementById('kpi-rev').textContent = fmtMoney(rev);
         document.getElementById('kpi-qty').textContent = fmtNum(qty)+' шт';
 
@@ -1468,47 +1716,48 @@ HTML_TEMPLATE = r"""
             document.getElementById('kpi-stores-lbl').textContent = 'Магазинов';
             document.getElementById('panel-title').textContent = 'Федеральные сети';
             document.getElementById('panel-sub').textContent = 'Картофельные чипсы — магазины';
-            filtersNote.innerHTML = `Всего: <strong>${fmtNum(TOTAL_ALL_STORES)}</strong> · На карте: <strong>${fmtNum(TOTAL_GEO_STORES)}</strong> · Показано: <strong>${fmtNum(rows.length)}</strong>`;
+            document.getElementById('filters-note').innerHTML = `Всего: <strong>${fmtNum(TOTAL_ALL_STORES)}</strong> · На карте: <strong>${fmtNum(TOTAL_GEO_STORES)}</strong> · Показано: <strong>${fmtNum(rows.length)}</strong>`;
         } else if (layer === 'cities') {
             document.getElementById('kpi-stores').textContent = fmtNum(rows.length);
             document.getElementById('kpi-stores-lbl').textContent = 'Городов';
             document.getElementById('panel-title').textContent = 'Продажи на душу населения';
-            document.getElementById('panel-sub').textContent = 'Картофельные чипсы — шт / 1 000 жителей';
-            const withPop = rows.filter(x => x.qty_per_1000 !== null).length;
-            filtersNote.innerHTML = `Городов с данными о населении: <strong>${fmtNum(withPop)}</strong> из <strong>${fmtNum(rows.length)}</strong>`;
-        } else if (layer === 'fd') {
+            document.getElementById('panel-sub').textContent = 'Суммарная выручка и количество';
+            const withPop = rows.filter(x => x.population !== null && x.population !== undefined).length;
+            document.getElementById('filters-note').innerHTML = `Городов: <strong>${fmtNum(rows.length)}</strong> (с населением: ${fmtNum(withPop)})`;
+        } else if (layer === 'regions') {
             document.getElementById('kpi-stores').textContent = fmtNum(rows.length);
-            document.getElementById('kpi-stores-lbl').textContent = 'Округов';
-            document.getElementById('panel-title').textContent = 'Федеральные округа';
-            document.getElementById('panel-sub').textContent = 'Картофельные чипсы — сводка по округам';
-            filtersNote.innerHTML = `Данные по <strong>${fmtNum(rows.length)}</strong> федеральным округам`;
+            document.getElementById('kpi-stores-lbl').textContent = 'Регионов';
+            document.getElementById('panel-title').textContent = 'Регионы';
+            document.getElementById('panel-sub').textContent = 'Сводка по регионам';
+            document.getElementById('filters-note').innerHTML = `Данные по <strong>${fmtNum(rows.length)}</strong> регионам`;
         }
     }
 
     // ─── LEGEND ────────────────────────────────────────────────────────────
     function updateLegendStores(rows) {
         const counts = {};
-        rows.forEach(s => { counts[s.chain] = (counts[s.chain]||0)+1; });
-        let html = '<div class="legend-title">🏪 Сети</div>';
-        CHAINS.forEach(chain => {
+        rows.forEach(s => { counts[s.c] = (counts[s.c]||0)+1; });
+        const chains = uniq(rows.map(x => x.c));
+        let html = `<div class="legend-title"><span class="icon">🏪</span> Сети</div>`;
+        chains.forEach(chain => {
             const color = COLOR_MAP[chain] || '#7c8798';
-            html += `<div class="legend-row">
-                <span class="legend-dot" style="background:${color};"/>
-                ${chain}
+            html += `<div class="legend-item">
+                <span class="legend-dot" style="background:${color};"></span>
+                <span class="legend-label">${chain}</span>
                 <span class="legend-count">${counts[chain]||0}</span>
             </div>`;
         });
-        html += '<hr class="legend-divider"/><div class="legend-hint">Размер точки = выручка<br>Цвет = сеть</div>';
-        legendEl.innerHTML = html;
+        html += `<hr class="legend-divider"/>
+                <div class="legend-hint">Размер точки = выручка</div>`;
+        document.getElementById('legend').innerHTML = html;
     }
 
     function updateLegendCities(rows) {
         const vals = rows.map(x=>x.qty_per_1000).filter(x=>x!==null&&x!==undefined);
         const minV = vals.length ? Math.min(...vals) : 0;
         const maxV = vals.length ? Math.max(...vals) : 1;
-        // Colorbar
         const grad = 'linear-gradient(to right, rgb(99,179,237), rgb(72,187,120), rgb(246,224,94), rgb(237,137,54), rgb(197,48,48))';
-        let html = `<div class="legend-title">🏙️ Продажи / 1 000 жителей</div>
+        let html = `<div class="legend-title"><span class="icon">🏙️</span> Продажи / 1 000 жителей</div>
         <div class="colorbar-wrap">
             <div class="colorbar" style="background:${grad};"></div>
             <div class="colorbar-labels">
@@ -1519,35 +1768,38 @@ HTML_TEMPLATE = r"""
         </div>
         <hr class="legend-divider"/>
         <div class="legend-hint">Серый = нет данных о населении<br>Размер = абс. продажи</div>`;
-        legendEl.innerHTML = html;
+        document.getElementById('legend').innerHTML = html;
     }
 
-    function updateLegendFd(fdRows) {
-        let html = '<div class="legend-title">🗺️ Федеральные округа</div>';
-        fdRows.forEach((fd, i) => {
-            const color = FD_COLORS[i % FD_COLORS.length];
-            html += `<div class="legend-row">
-                <span class="legend-dot" style="background:${color};"/>
-                <span style="font-size:11px;">${fd.name}</span>
-                <span class="legend-count">${fmtNum(fd.qty)} шт</span>
+    function updateLegendRegions(rows) {
+        let html = `<div class="legend-title"><span class="icon">🗺️</span> Регионы</div>`;
+        rows.forEach((region, i) => {
+            const color = REGION_COLORS[i % REGION_COLORS.length];
+            html += `<div class="legend-item">
+                <span class="legend-dot" style="background:${color};"></span>
+                <span class="legend-label">${region.name}</span>
+                <span class="legend-count">${fmtNum(region.qty)} шт</span>
             </div>`;
         });
-        html += '<hr class="legend-divider"/><div class="legend-hint">Размер = кол-во продаж</div>';
-        legendEl.innerHTML = html;
+        html += `<hr class="legend-divider"/>
+                <div class="legend-hint">Размер = кол-во продаж</div>`;
+        document.getElementById('legend').innerHTML = html;
     }
 
     // ─── RENDER FUNCTIONS ─────────────────────────────────────────────────
-
     function renderStores(rows) {
         cluster.clearLayers();
         rows.forEach(store => {
-            const color = COLOR_MAP[store.chain] || '#7c8798';
+            const color = COLOR_MAP[store.c] || '#7c8798';
             const marker = L.circleMarker([store.lat, store.lon], {
-                radius: store.radius, color: color, weight:2,
+                radius: store.r, color: color, weight:2,
                 fillColor: color, fillOpacity:0.7, opacity:0.9
             });
-            marker.bindTooltip(`<strong>${esc(store.name)}</strong><br>${esc(store.chain)} · ${fmtMoney(store.rev)}`, {direction:'top',sticky:true});
-            marker.bindPopup(makeStorePopup(store), {maxWidth:430, closeButton:true});
+            marker.bindTooltip(`<strong>${esc(store.n)}</strong><br>${esc(store.c)} · ${fmtMoney(store.rev)}`, {direction:'top',sticky:true});
+            marker.bindPopup((layer) => {
+                const detail = DETAILS[store.id] || {};
+                return makeStorePopup(store, detail);
+            }, {maxWidth:430, closeButton:true});
             cluster.addLayer(marker);
         });
         updateKpi(rows, 'stores');
@@ -1556,62 +1808,74 @@ HTML_TEMPLATE = r"""
 
     function renderCities(rows) {
         cityLayerGroup.clearLayers();
-        // Считаем min/max для colorscale
         const pcVals = rows.map(x=>x.qty_per_1000).filter(x=>x!==null&&x!==undefined);
         const minPc = pcVals.length ? Math.min(...pcVals) : 0;
         const maxPc = pcVals.length ? Math.max(...pcVals) : 1;
 
         rows.forEach(city => {
             const color = perCapitaColor(city.qty_per_1000, minPc, maxPc);
-            // Размер — абсолютные продажи
             const marker = L.circleMarker([city.lat, city.lon], {
-                radius: city.radius_pc || 8,
+                radius: city.r || 8,
                 color: '#fff', weight: 2,
                 fillColor: color, fillOpacity: 0.82, opacity: 0.9
             });
-            const pcStr = city.qty_per_1000 !== null ? fmtPc(city.qty_per_1000)+' шт/1000' : 'нет данных';
+            const pcStr = city.qty_per_1000 !== null && city.qty_per_1000 !== undefined ? fmtPc(city.qty_per_1000)+' шт/1000' : 'нет данных';
             marker.bindTooltip(`<strong>${esc(city.city)}</strong><br>На 1000 жит.: <b>${pcStr}</b><br>Продаж: ${fmtNum(city.qty)} шт`, {direction:'top', sticky:true});
             marker.bindPopup(makeCityPopup(city), {maxWidth:380, closeButton:true});
             cityLayerGroup.addLayer(marker);
+
+            const labelIcon = L.divIcon({
+                className: 'city-label',
+                html: `<div>${esc(city.city)}</div>`,
+                iconSize: [0,0],
+                iconAnchor: [0, -12]
+            });
+            const label = L.marker([city.lat, city.lon], { icon: labelIcon, interactive: false });
+            cityLayerGroup.addLayer(label);
         });
+
         updateKpi(rows, 'cities');
         updateLegendCities(rows);
     }
 
-    function renderFd(rows) {
-        fdLayerGroup.clearLayers();
-        rows.forEach((fd, i) => {
-            const color = FD_COLORS[i % FD_COLORS.length];
-            const marker = L.circleMarker([fd.lat, fd.lon], {
-                radius: fd.radius,
+    function renderRegions(rows) {
+        regionsLayerGroup.clearLayers();
+        rows.forEach((region, i) => {
+            const color = REGION_COLORS[i % REGION_COLORS.length];
+            const marker = L.circleMarker([region.lat, region.lon], {
+                radius: region.r,
                 color: '#fff', weight: 3,
                 fillColor: color, fillOpacity: 0.65, opacity: 1.0
             });
             marker.bindTooltip(
-                `<strong>${esc(fd.name)}</strong><br>Продажи: ${fmtNum(fd.qty)} шт<br>На 1000 жит.: ${fmtPc(fd.qty_per_1000)}`,
+                `<strong>${esc(region.name)}</strong><br>Продажи: ${fmtNum(region.qty)} шт`,
                 {direction:'top', sticky:true}
             );
-            marker.bindPopup(makeFdPopup(fd, color), {maxWidth:360, closeButton:true});
-            fdLayerGroup.addLayer(marker);
+            marker.bindPopup(makeRegionPopup(region, color), {maxWidth:360, closeButton:true});
+            regionsLayerGroup.addLayer(marker);
         });
-        updateKpi(rows, 'fd');
-        updateLegendFd(rows);
+        updateKpi(rows, 'regions');
+        updateLegendRegions(rows);
     }
 
-    // ─── FILTER LOGIC ──────────────────────────────────────────────────────
+    // ─── FILTERS ──────────────────────────────────────────────────────────
+    function getSelectedChains() {
+        return [...document.querySelectorAll('#chain-checkboxes input[type="checkbox"]')]
+            .filter(cb => cb.checked).map(cb => cb.value);
+    }
+
     function getFilteredStores() {
         const chains = getSelectedChains();
-        const region = regionSelect.value;
-        const city   = citySelect.value;
-        const fmt    = formatSelect.value;
-        const search = (searchInput.value||'').trim().toLowerCase();
+        const region = document.getElementById('f-region').value;
+        const city   = document.getElementById('f-city').value;
+        const search = (document.getElementById('f-search').value||'').trim().toLowerCase();
         return STORES.filter(s => {
-            if (!chains.includes(s.chain)) return false;
-            if (region && s.region !== region) return false;
-            if (city   && s.city   !== city)   return false;
-            if (fmt    && s.format !== fmt)    return false;
+            if (!chains.includes(s.c)) return false;
+            const det = DETAILS[s.id] || {};
+            if (region && det.region !== region) return false;
+            if (city   && det.city   !== city)   return false;
             if (search) {
-                const hay = [s.name,s.address,s.city,s.region,s.store_code,s.chain].join(' ').toLowerCase();
+                const hay = [s.n, det.address, det.city, det.region, det.store_code, s.c].join(' ').toLowerCase();
                 if (!hay.includes(search)) return false;
             }
             return true;
@@ -1619,26 +1883,31 @@ HTML_TEMPLATE = r"""
     }
 
     function getFilteredCities() {
-        const region = regionSelect.value;
-        const city   = citySelect.value;
-        const search = (searchInput.value||'').trim().toLowerCase();
+        const region = document.getElementById('f-region').value;
+        const city   = document.getElementById('f-city').value;
+        const search = (document.getElementById('f-search').value||'').trim().toLowerCase();
+        const popFilter = document.getElementById('sel-population-filter').value;
         return CITIES.filter(c => {
             if (region && c.region !== region) return false;
             if (city   && c.city   !== city)   return false;
             if (search) {
-                const hay = [c.city, c.region, c.federal_district].join(' ').toLowerCase();
+                const hay = [c.city, c.region].join(' ').toLowerCase();
                 if (!hay.includes(search)) return false;
+            }
+            if (popFilter === 'only_with_pop' && (c.population === null || c.population === undefined || Number.isNaN(c.population))) {
+                return false;
+            }
+            if (popFilter === 'only_without_pop' && !(c.population === null || c.population === undefined || Number.isNaN(c.population))) {
+                return false;
             }
             return true;
         });
     }
 
-    function getFilteredFd() {
-        const fdVal  = fdSelect.value;
-        const search = (searchInput.value||'').trim().toLowerCase();
-        return FD_DATA.filter(fd => {
-            if (fdVal && fd.name !== fdVal) return false;
-            if (search && !fd.name.toLowerCase().includes(search)) return false;
+    function getFilteredRegions() {
+        const search = (document.getElementById('f-search').value||'').trim().toLowerCase();
+        return REGIONS_DATA.filter(r => {
+            if (search && !r.name.toLowerCase().includes(search)) return false;
             return true;
         });
     }
@@ -1646,41 +1915,46 @@ HTML_TEMPLATE = r"""
     // ─── SWITCH LAYER ─────────────────────────────────────────────────────
     window.switchLayer = function(layer) {
         currentLayer = layer;
-
-        // Обновляем active-стиль
-        ['stores','cities','fd'].forEach(l => {
+        ['stores','cities','regions'].forEach(l => {
             document.getElementById(`lopt-${l}`).classList.toggle('active', l===layer);
         });
 
-        // Скрываем/показываем слои
-        if (layer === 'stores') {
-            map.addLayer(cluster);
-            map.removeLayer(cityLayerGroup);
-            map.removeLayer(fdLayerGroup);
-            chainBlock.style.display = '';
-            formatBlock.style.display = '';
-            fdBlock.style.display = 'none';
-            layerNotice.style.display = 'none';
-        } else if (layer === 'cities') {
-            map.removeLayer(cluster);
-            map.addLayer(cityLayerGroup);
-            map.removeLayer(fdLayerGroup);
-            chainBlock.style.display = 'none';
-            formatBlock.style.display = 'none';
-            fdBlock.style.display = 'none';
-            layerNotice.style.display = '';
-        } else if (layer === 'fd') {
-            map.removeLayer(cluster);
-            map.removeLayer(cityLayerGroup);
-            map.addLayer(fdLayerGroup);
-            chainBlock.style.display = 'none';
-            formatBlock.style.display = 'none';
-            fdBlock.style.display = '';
-            layerNotice.style.display = '';
+        const isStores = layer === 'stores';
+        const isCities = layer === 'cities';
+        const isRegions = layer === 'regions';
+
+        document.getElementById('chain-filter-block').style.display = isStores ? '' : 'none';
+        document.getElementById('city-filter-block').style.display = isCities ? '' : 'none';
+        document.getElementById('layer-notice').style.display = isStores ? 'none' : '';
+
+        if (isCities) {
+            const cityRegions = uniq(CITIES.map(c => c.region).filter(Boolean));
+            const cityCities = uniq(CITIES.map(c => c.city).filter(Boolean));
+            fillSelect(document.getElementById('f-region'), cityRegions, 'Все регионы');
+            fillSelect(document.getElementById('f-city'), cityCities, 'Все города');
+        } else if (isStores) {
+            const storeRegions = uniq(Object.values(DETAILS).map(d => d.region).filter(Boolean));
+            const storeCities = uniq(Object.values(DETAILS).map(d => d.city).filter(Boolean));
+            fillSelect(document.getElementById('f-region'), storeRegions, 'Все регионы');
+            fillSelect(document.getElementById('f-city'), storeCities, 'Все города');
+        } else {
+            // для регионов не обновляем списки, т.к. их там быть не должно
+            // можно оставить, но не обязательно
         }
 
-        // Обновляем опции городов в фильтре
-        updateCityOptions();
+        if (isStores) {
+            map.addLayer(cluster);
+            map.removeLayer(cityLayerGroup);
+            map.removeLayer(regionsLayerGroup);
+        } else if (isCities) {
+            map.removeLayer(cluster);
+            map.addLayer(cityLayerGroup);
+            map.removeLayer(regionsLayerGroup);
+        } else if (isRegions) {
+            map.removeLayer(cluster);
+            map.removeLayer(cityLayerGroup);
+            map.addLayer(regionsLayerGroup);
+        }
         applyFilters();
     };
 
@@ -1691,67 +1965,125 @@ HTML_TEMPLATE = r"""
         } else if (currentLayer === 'cities') {
             const rows = getFilteredCities();
             renderCities(rows);
-        } else if (currentLayer === 'fd') {
-            const rows = getFilteredFd();
-            renderFd(rows);
+        } else if (currentLayer === 'regions') {
+            const rows = getFilteredRegions();
+            renderRegions(rows);
         }
     }
 
     function resetFilters() {
-        // Сбрасываем чекбоксы
-        [...chainCheckboxes.querySelectorAll('input[type="checkbox"]')].forEach(cb => cb.checked=true);
-        regionSelect.value = '';
-        fillSelect(citySelect, ALL_CITIES, 'Все города');
-        citySelect.value  = '';
-        formatSelect.value = '';
-        fdSelect.value    = '';
-        searchInput.value = '';
+        [...document.querySelectorAll('#chain-checkboxes input[type="checkbox"]')].forEach(cb => cb.checked=true);
+        document.getElementById('f-region').value = '';
+        document.getElementById('f-city').value = '';
+        document.getElementById('f-search').value = '';
+        document.getElementById('sel-population-filter').value = 'all';
         applyFilters();
         map.setView(DEFAULT_CENTER, 5);
     }
 
-    document.getElementById('btn-apply').addEventListener('click', applyFilters);
-    document.getElementById('btn-reset').addEventListener('click', resetFilters);
-    searchInput.addEventListener('keydown', e => { if (e.key==='Enter') applyFilters(); });
+    // ─── ИНИЦИАЛИЗАЦИЯ КАРТЫ ─────────────────────────────────────────────
+    function initMap() {
+        document.getElementById('loading').style.display = 'none';
 
-    // Filter toggle
-    const filtersEl = document.getElementById('filters');
-    const toggleBtn = document.getElementById('filter-toggle');
-    let collapsed = false;
-    toggleBtn.addEventListener('click', function() {
-        collapsed = !collapsed;
-        filtersEl.classList.toggle('collapsed', collapsed);
-        toggleBtn.innerHTML = collapsed ? '⚙️' : '⚙️ Фильтры';
-    });
+        map = L.map('map', { zoomControl:true, preferCanvas:true }).setView(DEFAULT_CENTER, 5);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            maxZoom:19, attribution:'© OpenStreetMap © CARTO'
+        }).addTo(map);
 
-    // ─── INIT ─────────────────────────────────────────────────────────────
-    // Рендерим все слои сразу (данные готовы)
-    renderStores(STORES);
-    renderCities(CITIES);
-    renderFd(FD_DATA);
+        cluster = L.markerClusterGroup({ chunkedLoading:true, spiderfyOnMaxZoom:true, showCoverageOnHover:false, maxClusterRadius:60 });
+        cityLayerGroup = L.layerGroup();
+        regionsLayerGroup   = L.layerGroup();
+        map.addLayer(cluster);
 
-    // По умолчанию показываем только stores
-    map.addLayer(cluster);
-    map.removeLayer(cityLayerGroup);
-    map.removeLayer(fdLayerGroup);
+        // ===== ФИЛЬТР СЕТЕЙ (стильные кнопки) =====
+        const chains = uniq(STORES.map(x => x.c));
+        const chainCheckboxes = document.getElementById('chain-checkboxes');
+        const counts = {};
+        STORES.forEach(s => { counts[s.c] = (counts[s.c]||0)+1; });
+        chainCheckboxes.innerHTML = '';
+        chains.forEach(chain => {
+            const color = COLOR_MAP[chain] || '#7c8798';
+            const btn = document.createElement('label');
+            btn.className = 'chain-checkbox-btn active';
+            btn.innerHTML = `
+                <input type="checkbox" value="${chain}" checked/>
+                <span class="dot" style="background:${color};"></span>
+                ${chain}
+                <span class="count">${counts[chain]||0}</span>
+            `;
+            chainCheckboxes.appendChild(btn);
 
-    updateKpi(STORES, 'stores');
-    updateLegendStores(STORES);
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const cb = this.querySelector('input[type="checkbox"]');
+                cb.checked = !cb.checked;
+                this.classList.toggle('active', cb.checked);
+                applyFilters();
+            });
+        });
 
+        // Остальные фильтры
+        const allRegions = uniq(Object.values(DETAILS).map(d => d.region).filter(Boolean));
+        const allCities = uniq(Object.values(DETAILS).map(d => d.city).filter(Boolean));
+        fillSelect(document.getElementById('f-region'), allRegions, 'Все регионы');
+        fillSelect(document.getElementById('f-city'), allCities, 'Все города');
+
+        document.getElementById('btn-apply').addEventListener('click', applyFilters);
+        document.getElementById('btn-reset').addEventListener('click', resetFilters);
+        document.getElementById('f-search').addEventListener('keydown', e => { if (e.key==='Enter') applyFilters(); });
+        document.getElementById('sel-population-filter').addEventListener('change', applyFilters);
+
+        const filtersEl = document.getElementById('filters');
+        const toggleBtn = document.getElementById('filter-toggle');
+        let collapsed = false;
+        toggleBtn.addEventListener('click', function() {
+            collapsed = !collapsed;
+            filtersEl.classList.toggle('collapsed', collapsed);
+            toggleBtn.innerHTML = collapsed ? '⚙️' : '⚙️ Фильтры';
+        });
+
+        switchLayer('stores');
+    }
+
+    // ─── ЗАГРУЗКА ДАННЫХ ──────────────────────────────────────────────────
+    async function loadAll() {
+        try {
+            const [storesRes, citiesRes, regionsRes, detailsRes] = await Promise.all([
+                fetch('/data/stores.json'),
+                fetch('/data/cities.json'),
+                fetch('/data/regions.json'),
+                fetch('/data/details.json')
+            ]);
+            if (!storesRes.ok || !citiesRes.ok || !regionsRes.ok || !detailsRes.ok) {
+                throw new Error('Ошибка загрузки данных');
+            }
+            STORES = await storesRes.json();
+            CITIES = await citiesRes.json();
+            REGIONS_DATA = await regionsRes.json();
+            DETAILS = await detailsRes.json();
+            initMap();
+        } catch (err) {
+            document.getElementById('loading').innerHTML = `
+                <div style="color:#E63946;font-size:18px;">❌ Ошибка загрузки данных</div>
+                <div style="font-size:14px;color:#6b7a8d;margin-top:10px;">${err.message}</div>
+                <button onclick="location.reload()" style="margin-top:20px;padding:10px 24px;border:none;border-radius:12px;background:#4f7cff;color:#fff;font-weight:600;cursor:pointer;">Попробовать снова</button>
+            `;
+            console.error('Load error:', err);
+        }
+    }
+
+    loadAll();
     </script>
 </body>
 </html>
 """
 
 # ============================================================
-# ФИНАЛЬНАЯ СБОРКА
+# ФИНАЛЬНАЯ СБОРКА HTML
 # ============================================================
 html_content = (
     HTML_TEMPLATE
-    .replace("__STORES_JSON__",      stores_json)
-    .replace("__CITIES_JSON__",      cities_json)
-    .replace("__FD_JSON__",          fd_json)
-    .replace("__COLOR_MAP__",        color_map_json)
+    .replace("__COLOR_MAP__",        json.dumps(color_map, ensure_ascii=False))
     .replace("__CENTER_LAT__",       f"{center_lat:.8f}")
     .replace("__CENTER_LON__",       f"{center_lon:.8f}")
     .replace("__TOTAL_ALL_STORES__", str(int(total_stores_all)))
@@ -1762,5 +2094,5 @@ with open(MAP_PATH, "w", encoding="utf-8") as f:
     f.write(html_content)
 
 print(f"\n✅ Карта сохранена: {MAP_PATH}")
-print(f"Размер файла: {MAP_PATH.stat().st_size / 1024 / 1024:.2f} MB")
-print(f"\n✅ Готово!")
+print(f"Размер HTML: {MAP_PATH.stat().st_size / 1024:.2f} KB")
+print(f"\n✅ Готово! Данные разнесены в JSON-файлах.\n")

@@ -58,7 +58,6 @@ def pipeline():
         conn_id="spark_connection",
         application="jobs/build_sales_mart_konditerka.py",
         on_failure_callback=telegram_alert,
-        py_files="/opt/airflow/deps/clickhouse_connect",
         retries=1,
         retry_delay=datetime.timedelta(minutes=2),
         deploy_mode="client",

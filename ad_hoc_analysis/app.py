@@ -1,7 +1,7 @@
-from flask import Flask, render_template_string, request, session, redirect, url_for
 from functools import wraps
 import secrets
 from pathlib import Path
+from flask import Flask, render_template_string, request, session, redirect, url_for, send_file
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(32)
@@ -16,6 +16,29 @@ USERS = {
 
 # Путь к сгенерированной карте
 MAP_PATH = Path("/home/bogdangor/Kaftal_Data_Architecture/ad_hoc_analysis/data/x5_stores_map_final.html")
+
+# Путь к JSON-файлам (такой же, как в generate_map.py)
+DATA_DIR = Path("/home/bogdangor/Kaftal_Data_Architecture/ad_hoc_analysis/data")
+
+# ============================================================
+# НОВЫЙ МАРШРУТ ДЛЯ ОТДАЧИ JSON-ФАЙЛОВ
+# ============================================================
+@app.route('/data/<filename>')
+def data_file(filename):
+    # Разрешаем только нужные файлы (безопасность)
+    allowed = {
+    'stores.json',
+    'cities.json',
+    'fd.json',
+    'regions.json',
+    'details.json'
+}
+    if filename not in allowed:
+        return "Forbidden", 403
+    file_path = DATA_DIR / filename
+    if not file_path.exists():
+        return "Not found", 404
+    return send_file(file_path, mimetype='application/json')
 
 # ============================================================
 # ФУНКЦИИ АВТОРИЗАЦИИ
